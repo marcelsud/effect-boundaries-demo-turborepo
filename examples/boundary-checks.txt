@@ -1,58 +1,87 @@
-Folder-boundary verification using the native tools and TypeScript.
+Capability-boundary verification using native tools and TypeScript against real implementation files.
 
 $ bun run boundaries
 
-Another team's public/ file still requires the package entry point
+Another team's public view must be consumed through its package entry point
 $ turbo boundaries
 • turbo 2.11.10
 Checking packages...
-  x import `../../../pricing/src/public/boundary-fixture.view.js` leaves the
-  | package
-   ,-[packages/catalog/src/internal/boundary-probe.service.ts:1:29]
- 1 | import { listingView } from "../../../pricing/src/public/boundary-fixture.view.js";
-   :                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^|^^^^^^^^^^^^^^^^^^^^^^^^^^
-   :                                                        `-- file imported here
- 2 | export const probe = listingView;
+  x import `../../../pricing/src/public/price.view.js` leaves the package
+   ,-[packages/catalog/src/internal/boundary-probe.service.ts:1:27]
+ 1 | import { PriceView } from "../../../pricing/src/public/price.view.js";
+   :                           ^^^^^^^^^^^^^^^^^^^^^|^^^^^^^^^^^^^^^^^^^^^
+   :                                                `-- file imported here
+ 2 | export const probe = PriceView;
    `----
-  help: `../../../pricing/src/public/boundary-fixture.view.js` resolves to
-        path `../pricing/src/public/boundary-fixture.view.js` which is outside
-        of `@shop/catalog`
+  help: `../../../pricing/src/public/price.view.js` resolves to path `../
+        pricing/src/public/price.view.js` which is outside of `@shop/catalog`
 
-Checked 13 files in 4 packages, 1 issue found
+Checked 27 files in 4 packages, 1 issue found
 error: script "boundaries" exited with code 1
 
 PASS native boundary check rejected the import
 
 $ bun run boundaries
 
-Another team's external/ adapter remains private
+Another team's private projection cannot be imported
 $ turbo boundaries
 • turbo 2.11.10
 Checking packages...
-  x import `../../../logistics/src/external/carrier.client.js` leaves the
+  x import `../../../catalog/src/internal/product.projection.js` leaves the
   | package
-   ,-[packages/catalog/src/internal/boundary-probe.service.ts:1:31]
- 1 | import { carrierClient } from "../../../logistics/src/external/carrier.client.js";
-   :                               ^^^^^^^^^^^^^^^^^^^^^^^^^|^^^^^^^^^^^^^^^^^^^^^^^^^
-   :                                                        `-- file imported here
- 2 | export const probe = carrierClient;
+   ,-[packages/logistics/src/internal/boundary-probe.service.ts:1:32]
+ 1 | import { projectProduct } from "../../../catalog/src/internal/product.projection.js";
+   :                                ^^^^^^^^^^^^^^^^^^^^^^^^^^|^^^^^^^^^^^^^^^^^^^^^^^^^^
+   :                                                          `-- file imported here
+ 2 | export const probe = projectProduct;
    `----
-  help: `../../../logistics/src/external/carrier.client.js` resolves to path
-        `../logistics/src/external/carrier.client.js` which is outside of
-        `@shop/catalog`
+  help: `../../../catalog/src/internal/product.projection.js` resolves to path
+        `../catalog/src/internal/product.projection.js` which is outside of
+        `@shop/logistics`
 
-Checked 13 files in 4 packages, 1 issue found
+Checked 27 files in 4 packages, 1 issue found
+error: script "boundaries" exited with code 1
+
+PASS native boundary check rejected the import
+
+PASS TypeScript alone accepts the internally provided private carrier Layer
+
+$ bun run boundaries
+
+Another team's external adapter Layer cannot be imported or internally provided
+$ turbo boundaries
+• turbo 2.11.10
+Checking packages...
+  x import `../../../logistics/dist/external/demo-carrier.client.js` leaves
+  | the package
+   ,-[packages/catalog/src/internal/boundary-probe.service.ts:2:29]
+ 1 | import { Layer } from "effect";
+ 2 | import { CarrierLive } from "../../../logistics/dist/external/demo-carrier.client.js";
+   :                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^|^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   :                                                         `-- file imported here
+ 3 | export const probe = Layer.empty.pipe(Layer.provide(CarrierLive));
+   `----
+  help: `../../../logistics/dist/external/demo-carrier.client.js` resolves
+        to path `../logistics/dist/external/demo-carrier.client.js` which is
+        outside of `@shop/catalog`
+
+Checked 27 files in 4 packages, 1 issue found
 error: script "boundaries" exited with code 1
 
 PASS native boundary check rejected the import
 
 Unexported package subpath
-packages/catalog/src/internal/boundary-probe.service.ts(1,29): error TS2307: Cannot find module '@shop/pricing/public/boundary-fixture.view' or its corresponding type declarations.
+packages/catalog/src/internal/boundary-probe.service.ts(1,27): error TS2307: Cannot find module '@shop/pricing/public/price.view' or its corresponding type declarations.
 
 PASS TypeScript rejected the import
 
 Private repository absent from public exports
 packages/catalog/src/internal/boundary-probe.service.ts(1,10): error TS2305: Module '"@shop/logistics"' has no exported member 'InventoryRepository'.
+
+PASS TypeScript rejected the import
+
+Private carrier service absent from public exports
+packages/catalog/src/internal/boundary-probe.service.ts(1,10): error TS2305: Module '"@shop/logistics"' has no exported member 'Carrier'.
 
 PASS TypeScript rejected the import
 
@@ -67,20 +96,20 @@ $ turbo run build demo
    • Running build, demo in 4 packages
    • Remote caching disabled
 
-//:boundaries: cache bypass, force executing 47552630f840278d
+//:boundaries: cache bypass, force executing cbe391f648ace3fe
 //:boundaries: $ turbo boundaries
 //:boundaries: • turbo 2.11.10
 //:boundaries: Checking packages...
-//:boundaries: Checked 10 files in 4 packages, no issues found
-@shop/pricing:build: cache miss, executing eb79ce2ada9bb8b6
+//:boundaries: Checked 26 files in 4 packages, no issues found
+@shop/pricing:build: cache miss, executing 4f997cebeb8699fa
 @shop/pricing:build: $ tsc -p tsconfig.json
-@shop/logistics:build: cache miss, executing a1a4ef520b2a7fd3
+@shop/logistics:build: cache miss, executing 58d6b3b062652cba
 @shop/logistics:build: $ tsc -p tsconfig.json
-@shop/catalog:build: cache miss, executing 9836fc6789cf4591
+@shop/catalog:build: cache miss, executing 6a9d5818e8015b30
 @shop/catalog:build: $ tsc -p tsconfig.json
-@shop/demo:build: cache miss, executing 773722af1a184432
+@shop/demo:build: cache miss, executing e6ab614fa6175328
 @shop/demo:build: $ tsc -p tsconfig.json
-@shop/demo:demo: cache bypass, force executing d85a855787d320b3
+@shop/demo:demo: cache bypass, force executing 4fe0aceb36760e9e
 @shop/demo:demo: $ node dist/main.js
 @shop/demo:demo: {
 @shop/demo:demo:   "id": "p-1",
@@ -95,12 +124,14 @@ $ turbo run build demo
 @shop/demo:demo: PASS public schemas reject malformed requests, invalid money/currency and invalid quantities
 @shop/demo:demo: Trace: Catalog.getProduct [dependency] -> Pricing.getPrice [storage] -> SchemaError
 @shop/demo:demo: PASS service-owned application errors preserve operations, stages, stacks and original cause chains
+@shop/demo:demo: PASS public product composes team views/streams; consumer snapshots resume with independent cursors, redelivery and gap checks
+@shop/demo:demo: PASS stockout policy requests an idempotent delivery through a private carrier adapter; schema and SDK failures retain their cause chain
 
  Tasks:    6 successful, 6 total
 Cached:    0 cached, 6 total
-  Time:    13.352s
+  Time:    14.243s
 
 
 PASS Logistics can consume Pricing's declared public API without changing shared configuration
 
-All temporary fixtures and the public-dependency example were restored.
+All temporary caller files and the public-dependency example were restored.

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { runCapabilityExamples } from "./capabilities.demo.js";
 import { Effect, Layer, Schema } from "effect";
 import {
   Catalog,
@@ -262,3 +263,5 @@ await assert.rejects(
     return true;
   },
 );
+
+await runCapabilityExamples();

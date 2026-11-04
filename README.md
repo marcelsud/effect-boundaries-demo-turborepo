@@ -89,16 +89,41 @@ Each team package has one public entry point and groups its implementation:
 packages/
   catalog/src/
     index.ts
-    internal/catalog.service.ts
-    internal/product.repository.ts
+    internal/
+      catalog.service.ts
+      product.aggregate.ts
+      product.projection.ts
+      product.repository.ts
+    public/
+      products.view.ts
+      products.stream.ts
+      rename-product.command.ts
+      product-listing.product.ts
   logistics/src/
     index.ts
-    internal/logistics.service.ts
-    internal/inventory.repository.ts
+    internal/
+      logistics.service.ts
+      inventory.repository.ts
+      stockout.policy.ts
+    public/
+      inventory.view.ts
+      inventory.stream.ts
+      set-inventory.command.ts
+      request-delivery.command.ts
+    external/
+      carrier.external.ts
+      demo-carrier.client.ts
   pricing/src/
     index.ts
-    internal/pricing.service.ts
-    internal/price.repository.ts
+    internal/
+      pricing.service.ts
+      price.repository.ts
+    public/
+      price.view.ts
+apps/demo/src/
+  main.ts
+  capabilities.demo.ts
+  product-listing.projection.ts
 ```
 
 Files use Nest-style `kebab-case.role.ts`; exported services and Layers keep
@@ -106,34 +131,110 @@ PascalCase names such as `Catalog` and `CatalogLive`. This borrows naming from
 [Nest](https://docs.nestjs.com/first-steps) and capability vocabulary from
 [Alchemy Domain](https://alchemy.run/domain/project-layout/), using plain Effect.
 
-- `internal/` contains service implementations and repositories. Services keep
-  their schemas, errors, and Live layers together. The root entry point selects
-  which services, schemas, errors, and Layers consumers may use; repository tags
-  and repository Layers stay private.
-- `public/` is reserved for published capabilities such as products, views, and
-  streams when implemented. Only explicit exports from `src/index.ts` are public;
-  placing a file here does not export it.
-- `external/` is reserved for integrations when needed: for example,
-  `external/carrier.external.ts` for a domain-facing Effect service and schemas,
-  and `external/dhl.client.ts` for its vendor adapter and Live layer. Neither is
-  exported unless the owning team deliberately makes it part of its API.
+- `internal/` contains service implementations, repositories, aggregates,
+  projections, and policies. Services keep their Live layers alongside them.
+- `public/` contains published capabilities: products, views, streams, and
+  commands. Only explicit exports from `src/index.ts` are public; placing a file
+  here does not export it. The entry point also selects schemas, errors, and
+  Layers from implementation files when they are part of the public contract.
+- `external/` contains the private domain-facing carrier port, its schemas, and
+  its vendor adapter Layer. Consumers use `RequestDelivery`, which hides both
+  the SDK and the carrier service tag.
 
-Add role names as capabilities exist: `*.command.ts` for commands,
-`*.aggregate.ts` for aggregates, `*.view.ts` for read models, `*.stream.ts` for
-durable event feeds, `*.projection.ts` for private materializers, and `*.policy.ts`
-for reactions that trigger commands or external actions. A composed public
-offering can use `public/product-listing.product.ts`; its contract would define
-its views, streams, cursor ownership, and snapshot/resume behavior explicitly.
+Package boundaries cover every folder. Consumers import `@shop/catalog`,
+`@shop/logistics`, or `@shop/pricing`, never another package's source or compiled
+implementation path. Native configs discover nested TypeScript files, so new
+capabilities require no central authorization or extra boundary rule.
 
-The current demo implements ordinary query services and in-memory repositories,
-so it uses `*.service.ts` and `*.repository.ts`. It has no external integration,
-event log, projection, or snapshot implementation, and no Alchemy dependency.
+## Run the capability examples
 
-Package boundaries cover every folder, including future `public/` and
-`external/` folders: consumers import `@shop/catalog`, `@shop/logistics`, or
-`@shop/pricing`, never another package's source or compiled implementation path.
-The native configs already discover nested TypeScript files. Moving a file into
-a new folder requires no central authorization or additional boundary rule.
+`bun run check` also runs
+[the capability demo](apps/demo/src/capabilities.demo.ts). It uses one coherent
+flow across all three team packages:
+
+| Capability                                           | Owner and implementation                 | Behavior                                                                                                                       |
+| ---------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `RenameProduct`                                      | Catalog, `rename-product.command.ts`     | Validates a request and asks the private aggregate to decide a rename. Missing products and blank names are domain rejections. |
+| `ProductsView` / `ProductsStream`                    | Catalog                                  | Exposes product snapshots and rename events with consumer-owned cursors.                                                       |
+| `SetInventory` / `InventoryView` / `InventoryStream` | Logistics                                | Updates stock and exposes snapshots and inventory events.                                                                      |
+| `PriceView`                                          | Pricing                                  | Exposes the existing schema-validated price query as a read-only view.                                                         |
+| `ProductListing`                                     | Catalog, `product-listing.product.ts`    | Combines the product view, inventory view, and Pricing's price view; publishes a snapshot and both change feeds.               |
+| `StockoutPolicy`                                     | Logistics, `stockout.policy.ts`          | Reacts to zero inventory by requesting a replenishment delivery of 12 units.                                                   |
+| `RequestDelivery`                                    | Logistics, `request-delivery.command.ts` | Validates input, calls a private carrier facade, and returns a domain-shaped delivery.                                         |
+
+`product.aggregate.ts` makes a pure decision that emits `ProductRenamed`.
+`product.projection.ts` applies events to the private product read model.
+The repository updates the read model, event history, and cursor in one Effect
+`Ref.modify`. Inventory uses the same atomic state-and-history pattern.
+The existing Catalog and Logistics services read those same stores; the demo
+verifies that a rename is visible through `Catalog.getProduct` too.
+
+### Snapshots, streams, and consumer projections
+
+Each team's view returns state and a high-water cursor atomically. Cursor `0`
+means before the first event; `events(after)` emits events with a strictly greater
+cursor. Each read captures a finite batch of retained history. Poll again with
+your saved cursor for subsequent changes. Future or invalid cursors produce
+schema-backed application errors.
+
+`ProductListing.snapshot` joins the three teams' views and returns
+`{ items, cursors: { products, inventory } }`. Each source has its own cursor;
+there is no global cursor or transaction across teams. Pricing is read-only in
+this demo, so prices are included in the snapshot without a price-change feed.
+`ProductListing.changes(cursors)` concatenates the two finite event batches,
+preserving order within each source without promising a global event order.
+
+[The consuming app's projection](apps/demo/src/product-listing.projection.ts)
+maintains the listing and its cursor vector. It ignores already-applied events,
+rejects sequence gaps, and validates restored snapshots with Effect Schema.
+The example:
+
+1. Takes a listing snapshot at `{ products: 0, inventory: 0 }`.
+2. Renames the product and changes inventory, then projects both event feeds.
+3. Serializes the listing and its cursors together as one JSON snapshot.
+4. Produces more events, restores that JSON, and resumes after each saved cursor.
+5. Verifies independent consumers, duplicate delivery, sequence gaps, invalid
+   snapshots/cursors, rejected commands, and concurrent inventory writes.
+
+The restart is simulated by a JSON round trip while producer state remains
+alive. These are in-memory, append-only histories, not durable logs. State,
+history, and idempotency records reset when their Layer is rebuilt. For a real
+worker, persist producer history and consumer state-plus-cursors transactionally;
+add a retention/expired-cursor contract before pruning events.
+
+### Policies and private external adapters
+
+The app runs `StockoutPolicy` over inventory events separately from its
+projection. The policy performs an external action; replaying the pure listing
+projection does not book deliveries.
+
+`carrier.external.ts` defines a private domain-facing Effect service.
+`demo-carrier.client.ts` maps domain requests to a Promise-based vendor SDK shape,
+validates its unknown response, and maps it back to a `Delivery`. The SDK is a
+deterministic local simulation, so the demo needs no network or credentials.
+The adapter also simulates an unavailable vendor and a malformed vendor response.
+
+Each stockout uses `inventory:<cursor>` as its delivery idempotency key.
+Replaying that event returns the same delivery; reusing a key with a different
+payload fails. This exercises replay-safe policy reactions without claiming
+exactly-once execution. Production retries require durable keys and idempotency
+support from the actual provider.
+
+Schema and SDK failures preserve this diagnostic chain, including stacks:
+
+```text
+StockoutPolicyError [dependency]
+  cause: DeliveryError [external]
+    cause: CarrierError [transport or response]
+      cause: original SDK Error or SchemaError
+```
+
+Successful execution ends with these additional assertions:
+
+```text
+PASS public product composes team views/streams; consumer snapshots resume with independent cursors, redelivery and gap checks
+PASS stockout policy requests an idempotent delivery through a private carrier adapter; schema and SDK failures retain their cause chain
+```
 
 ## Schemas and Live layers
 
@@ -276,9 +377,10 @@ the Layer because its private provider is already satisfied. The native boundary
 check rejects the import, so the hook rejects the commit. HEAD stays unchanged.
 See [the captured commit output](examples/rejected-commit.txt).
 Additional [native boundary check output](examples/boundary-checks.txt) covers
-direct imports into temporary `public/` and `external/` fixtures, TypeScript
-export checks, and the allowed public dependency example. Fixtures are removed
-after verification; no custom boundary runner is shipped.
+direct imports into the real public view, private projection, and external
+adapter files, TypeScript export checks, and the allowed public dependency
+example. Temporary caller files are removed after verification; no custom
+boundary runner is shipped.
 
 Restore only the demonstration change:
 

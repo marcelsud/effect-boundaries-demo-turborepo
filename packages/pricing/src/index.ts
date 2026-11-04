@@ -6,3 +6,4 @@ export {
   Price,
   PriceUnavailable,
 } from "./internal/pricing.service.js";
+export { PriceView, PriceViewLive } from "./public/price.view.js";
