@@ -1,11 +1,11 @@
---- a/packages/catalog/src/Catalog.ts
-+++ b/packages/catalog/src/Catalog.ts
+--- a/packages/catalog/src/internal/catalog.service.ts
++++ b/packages/catalog/src/internal/catalog.service.ts
 @@ -1,4 +1,8 @@
  import { Context, Effect, Layer, Schema } from "effect";
 +import {
 +  PriceRepository,
 +  PriceRepositoryLive,
-+} from "../../pricing/dist/internal/PriceRepository.js";
++} from "../../../pricing/dist/internal/price.repository.js";
  import { Logistics, Quantity } from "@shop/logistics";
  import { Pricing, Price } from "@shop/pricing";
  import {

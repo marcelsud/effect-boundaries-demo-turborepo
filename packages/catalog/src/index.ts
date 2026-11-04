@@ -5,4 +5,4 @@ export {
   GetProductRequest,
   Product,
   ProductUnavailable,
-} from "./Catalog.js";
+} from "./internal/catalog.service.js";

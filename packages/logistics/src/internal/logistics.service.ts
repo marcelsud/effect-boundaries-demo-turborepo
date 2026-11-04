@@ -2,7 +2,7 @@ import { Context, Effect, Layer, Schema } from "effect";
 import {
   InventoryRepository,
   InventoryRepositoryLive,
-} from "./internal/InventoryRepository.js";
+} from "./inventory.repository.js";
 
 export const GetAvailabilityRequest = Schema.Struct({
   productId: Schema.NonEmptyString,

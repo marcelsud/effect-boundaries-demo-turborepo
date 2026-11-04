@@ -1,8 +1,5 @@
 import { Context, Effect, Layer, Schema } from "effect";
-import {
-  PriceRepository,
-  PriceRepositoryLive,
-} from "./internal/PriceRepository.js";
+import { PriceRepository, PriceRepositoryLive } from "./price.repository.js";
 
 export const GetPriceRequest = Schema.Struct({
   productId: Schema.NonEmptyString,

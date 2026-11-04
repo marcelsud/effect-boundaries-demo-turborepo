@@ -4,4 +4,4 @@ export {
   LogisticsLive,
   GetAvailabilityRequest,
   Quantity,
-} from "./Logistics.js";
+} from "./internal/logistics.service.js";

@@ -1,0 +1,106 @@
+Folder-boundary verification using the native tools and TypeScript.
+
+$ bun run boundaries
+
+Another team's public/ file still requires the package entry point
+$ turbo boundaries
+• turbo 2.11.10
+Checking packages...
+  x import `../../../pricing/src/public/boundary-fixture.view.js` leaves the
+  | package
+   ,-[packages/catalog/src/internal/boundary-probe.service.ts:1:29]
+ 1 | import { listingView } from "../../../pricing/src/public/boundary-fixture.view.js";
+   :                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^|^^^^^^^^^^^^^^^^^^^^^^^^^^
+   :                                                        `-- file imported here
+ 2 | export const probe = listingView;
+   `----
+  help: `../../../pricing/src/public/boundary-fixture.view.js` resolves to
+        path `../pricing/src/public/boundary-fixture.view.js` which is outside
+        of `@shop/catalog`
+
+Checked 13 files in 4 packages, 1 issue found
+error: script "boundaries" exited with code 1
+
+PASS native boundary check rejected the import
+
+$ bun run boundaries
+
+Another team's external/ adapter remains private
+$ turbo boundaries
+• turbo 2.11.10
+Checking packages...
+  x import `../../../logistics/src/external/carrier.client.js` leaves the
+  | package
+   ,-[packages/catalog/src/internal/boundary-probe.service.ts:1:31]
+ 1 | import { carrierClient } from "../../../logistics/src/external/carrier.client.js";
+   :                               ^^^^^^^^^^^^^^^^^^^^^^^^^|^^^^^^^^^^^^^^^^^^^^^^^^^
+   :                                                        `-- file imported here
+ 2 | export const probe = carrierClient;
+   `----
+  help: `../../../logistics/src/external/carrier.client.js` resolves to path
+        `../logistics/src/external/carrier.client.js` which is outside of
+        `@shop/catalog`
+
+Checked 13 files in 4 packages, 1 issue found
+error: script "boundaries" exited with code 1
+
+PASS native boundary check rejected the import
+
+Unexported package subpath
+packages/catalog/src/internal/boundary-probe.service.ts(1,29): error TS2307: Cannot find module '@shop/pricing/public/boundary-fixture.view' or its corresponding type declarations.
+
+PASS TypeScript rejected the import
+
+Private repository absent from public exports
+packages/catalog/src/internal/boundary-probe.service.ts(1,10): error TS2305: Module '"@shop/logistics"' has no exported member 'InventoryRepository'.
+
+PASS TypeScript rejected the import
+
+$ git apply examples/public-dependency.patch
+$ bun install
+$ bun run check
+
+$ turbo run build demo
+
+   • turbo 2.11.10
+   • Packages in scope: @shop/catalog, @shop/demo, @shop/logistics, @shop/pricing
+   • Running build, demo in 4 packages
+   • Remote caching disabled
+
+//:boundaries: cache bypass, force executing 47552630f840278d
+//:boundaries: $ turbo boundaries
+//:boundaries: • turbo 2.11.10
+//:boundaries: Checking packages...
+//:boundaries: Checked 10 files in 4 packages, no issues found
+@shop/pricing:build: cache miss, executing eb79ce2ada9bb8b6
+@shop/pricing:build: $ tsc -p tsconfig.json
+@shop/logistics:build: cache miss, executing a1a4ef520b2a7fd3
+@shop/logistics:build: $ tsc -p tsconfig.json
+@shop/catalog:build: cache miss, executing 9836fc6789cf4591
+@shop/catalog:build: $ tsc -p tsconfig.json
+@shop/demo:build: cache miss, executing 773722af1a184432
+@shop/demo:build: $ tsc -p tsconfig.json
+@shop/demo:demo: cache bypass, force executing d85a855787d320b3
+@shop/demo:demo: $ node dist/main.js
+@shop/demo:demo: {
+@shop/demo:demo:   "id": "p-1",
+@shop/demo:demo:   "name": "Keyboard",
+@shop/demo:demo:   "availableQuantity": 12,
+@shop/demo:demo:   "price": {
+@shop/demo:demo:     "amountCents": 19900,
+@shop/demo:demo:     "currency": "BRL"
+@shop/demo:demo:   }
+@shop/demo:demo: }
+@shop/demo:demo: PASS Catalog decodes inputs/storage, composes schemas, and round-trips products/errors
+@shop/demo:demo: PASS public schemas reject malformed requests, invalid money/currency and invalid quantities
+@shop/demo:demo: Trace: Catalog.getProduct [dependency] -> Pricing.getPrice [storage] -> SchemaError
+@shop/demo:demo: PASS service-owned application errors preserve operations, stages, stacks and original cause chains
+
+ Tasks:    6 successful, 6 total
+Cached:    0 cached, 6 total
+  Time:    13.352s
+
+
+PASS Logistics can consume Pricing's declared public API without changing shared configuration
+
+All temporary fixtures and the public-dependency example were restored.

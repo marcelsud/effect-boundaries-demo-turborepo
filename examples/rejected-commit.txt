@@ -2,18 +2,18 @@ $ bunx tsc -p packages/catalog --noEmit
 
 PASS TypeScript alone accepts the internally supplied private provider
 
-$ git diff --cached -- packages/catalog/src/Catalog.ts
+$ git diff --cached -- packages/catalog/src/internal/catalog.service.ts
 
-diff --git a/packages/catalog/src/Catalog.ts b/packages/catalog/src/Catalog.ts
-index f92697c..4b374a1 100644
---- a/packages/catalog/src/Catalog.ts
-+++ b/packages/catalog/src/Catalog.ts
+diff --git a/packages/catalog/src/internal/catalog.service.ts b/packages/catalog/src/internal/catalog.service.ts
+index 4c778f7..01e26b1 100644
+--- a/packages/catalog/src/internal/catalog.service.ts
++++ b/packages/catalog/src/internal/catalog.service.ts
 @@ -1,4 +1,8 @@
  import { Context, Effect, Layer, Schema } from "effect";
 +import {
 +  PriceRepository,
 +  PriceRepositoryLive,
-+} from "../../pricing/dist/internal/PriceRepository.js";
++} from "../../../pricing/dist/internal/price.repository.js";
  import { Logistics, Quantity } from "@shop/logistics";
  import { Pricing, Price } from "@shop/pricing";
  import {
@@ -99,29 +99,30 @@ $ turbo run build demo
    • Running build, demo in 4 packages
    • Remote caching disabled
 
-//:boundaries: cache bypass, force executing 36d08996612c9f91
+//:boundaries: cache bypass, force executing 9a37794319b33681
 //:boundaries: $ turbo boundaries
 //:boundaries: • turbo 2.11.10
 //:boundaries: Checking packages...
 //:boundaries: Checked 10 files in 4 packages, 1 issue found
-//:boundaries:   x import `../../pricing/dist/internal/PriceRepository.js` leaves the package
-//:boundaries:    ,-[packages/catalog/src/Catalog.ts:5:8]
+//:boundaries:   x import `../../../pricing/dist/internal/price.repository.js` leaves the
+//:boundaries:   | package
+//:boundaries:    ,-[packages/catalog/src/internal/catalog.service.ts:5:8]
 //:boundaries:  4 |   PriceRepositoryLive,
-//:boundaries:  5 | } from "../../pricing/dist/internal/PriceRepository.js";
-//:boundaries:    :        ^^^^^^^^^^^^^^^^^^^^^^^^|^^^^^^^^^^^^^^^^^^^^^^^
-//:boundaries:    :                                `-- file imported here
+//:boundaries:  5 | } from "../../../pricing/dist/internal/price.repository.js";
+//:boundaries:    :        ^^^^^^^^^^^^^^^^^^^^^^^^^^|^^^^^^^^^^^^^^^^^^^^^^^^^
+//:boundaries:    :                                  `-- file imported here
 //:boundaries:  6 | import { Logistics, Quantity } from "@shop/logistics";
 //:boundaries:    `----
-//:boundaries:   help: `../../pricing/dist/internal/PriceRepository.js` resolves to path `../
-//:boundaries:         pricing/dist/internal/PriceRepository.js` which is outside of `@shop/
-//:boundaries:         catalog`
+//:boundaries:   help: `../../../pricing/dist/internal/price.repository.js` resolves to path
+//:boundaries:         `../pricing/dist/internal/price.repository.js` which is outside of
+//:boundaries:         `@shop/catalog`
 //:boundaries:
 //:boundaries: error: script "boundaries" exited with code 1
 //#boundaries:  ERROR  command () bun run boundaries exited (1)
 
  Tasks:    0 successful, 1 total
 Cached:    0 cached, 1 total
-  Time:    487ms
+  Time:    441ms
 Failed:    //#boundaries
 
  ERROR  run failed: command  exited (1)

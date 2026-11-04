@@ -81,14 +81,68 @@ application wiring supplies every required Effect service. A missing provider
 fails the application build; there is no separate whitelist of permitted Layer
 input types.
 
+## Folder and file naming
+
+Each team package has one public entry point and groups its implementation:
+
+```text
+packages/
+  catalog/src/
+    index.ts
+    internal/catalog.service.ts
+    internal/product.repository.ts
+  logistics/src/
+    index.ts
+    internal/logistics.service.ts
+    internal/inventory.repository.ts
+  pricing/src/
+    index.ts
+    internal/pricing.service.ts
+    internal/price.repository.ts
+```
+
+Files use Nest-style `kebab-case.role.ts`; exported services and Layers keep
+PascalCase names such as `Catalog` and `CatalogLive`. This borrows naming from
+[Nest](https://docs.nestjs.com/first-steps) and capability vocabulary from
+[Alchemy Domain](https://alchemy.run/domain/project-layout/), using plain Effect.
+
+- `internal/` contains service implementations and repositories. Services keep
+  their schemas, errors, and Live layers together. The root entry point selects
+  which services, schemas, errors, and Layers consumers may use; repository tags
+  and repository Layers stay private.
+- `public/` is reserved for published capabilities such as products, views, and
+  streams when implemented. Only explicit exports from `src/index.ts` are public;
+  placing a file here does not export it.
+- `external/` is reserved for integrations when needed: for example,
+  `external/carrier.external.ts` for a domain-facing Effect service and schemas,
+  and `external/dhl.client.ts` for its vendor adapter and Live layer. Neither is
+  exported unless the owning team deliberately makes it part of its API.
+
+Add role names as capabilities exist: `*.command.ts` for commands,
+`*.aggregate.ts` for aggregates, `*.view.ts` for read models, `*.stream.ts` for
+durable event feeds, `*.projection.ts` for private materializers, and `*.policy.ts`
+for reactions that trigger commands or external actions. A composed public
+offering can use `public/product-listing.product.ts`; its contract would define
+its views, streams, cursor ownership, and snapshot/resume behavior explicitly.
+
+The current demo implements ordinary query services and in-memory repositories,
+so it uses `*.service.ts` and `*.repository.ts`. It has no external integration,
+event log, projection, or snapshot implementation, and no Alchemy dependency.
+
+Package boundaries cover every folder, including future `public/` and
+`external/` folders: consumers import `@shop/catalog`, `@shop/logistics`, or
+`@shop/pricing`, never another package's source or compiled implementation path.
+The native configs already discover nested TypeScript files. Moving a file into
+a new folder requires no central authorization or additional boundary rule.
+
 ## Schemas and Live layers
 
 Each service's schemas, Context service, and Live layer are in the same file:
 
 ```text
-packages/catalog/src/Catalog.ts       GetProductRequest, Product, ProductUnavailable, Catalog, CatalogLive
-packages/logistics/src/Logistics.ts   GetAvailabilityRequest, Quantity, Logistics, LogisticsLive
-packages/pricing/src/Pricing.ts       GetPriceRequest, Price, PriceUnavailable, Pricing, PricingLive
+packages/catalog/src/internal/catalog.service.ts       GetProductRequest, Product, ProductUnavailable, Catalog, CatalogLive
+packages/logistics/src/internal/logistics.service.ts   GetAvailabilityRequest, Quantity, Logistics, LogisticsLive
+packages/pricing/src/internal/pricing.service.ts       GetPriceRequest, Price, PriceUnavailable, Pricing, PricingLive
 ```
 
 Repositories stay private in `src/internal`. There are no `Module.ts` files.
@@ -108,10 +162,9 @@ before using them as domain data.
 
 The runtime assertions cover invalid requests, invalid amounts/currency and
 quantities, missing products/prices, JSON round trips, and a provider returning
-an invalid numeric refinement. Catalog wraps dependency failures with the original cause
-and maps Pricing not-found failures into its own public error schema, retaining
-their cause too. The final
-Catalog response is validated too.
+an invalid numeric refinement. Catalog wraps dependency failures with the
+original cause and maps Pricing not-found failures into its own public error
+schema, retaining their cause too. The final Catalog response is validated too.
 
 Run `bun run format` to apply Prettier, or `bun run format:check` to verify it.
 Generated outputs, Bun's lockfile, patch files, and captured terminal output are
@@ -135,8 +188,7 @@ Each application error includes:
 Inside a service, schema decoding maps the typed failure:
 
 ```ts
-const input =
-  yield *
+const decodeRequest = (request: unknown) =>
   Schema.decodeUnknownEffect(GetProductRequest)(request).pipe(
     Effect.mapError(catalogFailure("request")),
   );
@@ -214,32 +266,37 @@ with `bun run setup:hooks`. Apply the included patch:
 ```sh
 git apply examples/private-import.patch
 bunx tsc -p packages/catalog --noEmit --tsBuildInfoFile packages/catalog/type-probe.tsbuildinfo
-git add packages/catalog/src/Catalog.ts
+git add packages/catalog/src/internal/catalog.service.ts
 git commit -m "Read Pricing internals from Catalog"
 ```
 
 The patch changes Catalog to import and internally provide
-`../../pricing/dist/internal/PriceRepository.js`. TypeScript alone accepts
+`../../../pricing/dist/internal/price.repository.js`. TypeScript alone accepts
 the Layer because its private provider is already satisfied. The native boundary
 check rejects the import, so the hook rejects the commit. HEAD stays unchanged.
 See [the captured commit output](examples/rejected-commit.txt).
+Additional [native boundary check output](examples/boundary-checks.txt) covers
+direct imports into temporary `public/` and `external/` fixtures, TypeScript
+export checks, and the allowed public dependency example. Fixtures are removed
+after verification; no custom boundary runner is shipped.
 
 Restore only the demonstration change:
 
 ```sh
-git restore --staged --worktree -- packages/catalog/src/Catalog.ts
+git restore --staged --worktree -- packages/catalog/src/internal/catalog.service.ts
 ```
 
 A second patch, `examples/public-dependency.patch`, makes Logistics consume
 Pricing's public service and Layer, adding both the package dependency and
-TypeScript project reference. `bun install` updates the generated lockfile. This is allowed: the native check and runtime
-demo pass without changing any shared tool configuration.
+TypeScript project reference. `bun install` updates the generated lockfile.
+This is allowed: the native check and runtime demo pass without changing any
+shared tool configuration.
 
 ```sh
 git apply examples/public-dependency.patch
 bun install
 bun run check
-git restore --worktree -- bun.lock packages/logistics/package.json packages/logistics/tsconfig.json packages/logistics/src/Logistics.ts
+git restore --worktree -- bun.lock packages/logistics/package.json packages/logistics/tsconfig.json packages/logistics/src/internal/logistics.service.ts
 ```
 
 Apply the patches separately. The restore commands discard the listed files'

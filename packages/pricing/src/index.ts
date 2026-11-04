@@ -5,4 +5,4 @@ export {
   GetPriceRequest,
   Price,
   PriceUnavailable,
-} from "./Pricing.js";
+} from "./internal/pricing.service.js";

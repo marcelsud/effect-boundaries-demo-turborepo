@@ -4,7 +4,7 @@ import { Pricing, Price } from "@shop/pricing";
 import {
   ProductRepository,
   ProductRepositoryLive,
-} from "./internal/ProductRepository.js";
+} from "./product.repository.js";
 
 export const GetProductRequest = Schema.Struct({
   productId: Schema.NonEmptyString,
