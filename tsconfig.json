@@ -11,9 +11,6 @@
       "path": "packages/pricing"
     },
     {
-      "path": "architecture"
-    },
-    {
       "path": "apps/demo"
     }
   ]

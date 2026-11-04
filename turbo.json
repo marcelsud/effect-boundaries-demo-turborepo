@@ -23,49 +23,5 @@
       ],
       "cache": false
     }
-  },
-  "boundaries": {
-    "tags": {
-      "scope:catalog": {
-        "dependencies": {
-          "allow": [
-            "scope:logistics",
-            "scope:pricing"
-          ]
-        }
-      },
-      "scope:logistics": {
-        "dependencies": {
-          "allow": [
-            "scope:logistics"
-          ]
-        }
-      },
-      "scope:pricing": {
-        "dependencies": {
-          "allow": [
-            "scope:pricing"
-          ]
-        }
-      },
-      "scope:architecture": {
-        "dependencies": {
-          "allow": [
-            "scope:catalog",
-            "scope:logistics",
-            "scope:pricing"
-          ]
-        }
-      },
-      "scope:app": {
-        "dependencies": {
-          "allow": [
-            "scope:catalog",
-            "scope:logistics",
-            "scope:pricing"
-          ]
-        }
-      }
-    }
   }
 }

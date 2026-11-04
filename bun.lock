@@ -20,16 +20,6 @@
         "effect": "4.1.2",
       },
     },
-    "architecture": {
-      "name": "@shop/architecture",
-      "version": "1.0.0",
-      "dependencies": {
-        "@shop/catalog": "*",
-        "@shop/logistics": "*",
-        "@shop/pricing": "*",
-        "effect": "4.1.2",
-      },
-    },
     "packages/catalog": {
       "name": "@shop/catalog",
       "version": "1.0.0",
@@ -55,8 +45,6 @@
     },
   },
   "packages": {
-    "@shop/architecture": ["@shop/architecture@workspace:architecture"],
-
     "@shop/catalog": ["@shop/catalog@workspace:packages/catalog"],
 
     "@shop/demo": ["@shop/demo@workspace:apps/demo"],

@@ -1,17 +1,6 @@
-# Copy to CODEOWNERS and replace the illustrative handles with real teams.
-/packages/catalog/          @your-org/catalog-team
-/packages/logistics/        @your-org/logistics-team
-/packages/pricing/          @your-org/pricing-team
-
-/architecture/              @your-org/architecture-team
-/apps/                      @your-org/architecture-team
-/examples/                  @your-org/architecture-team
-/package.json               @your-org/architecture-team
-/bun.lock                   @your-org/architecture-team
-/tsconfig*.json             @your-org/architecture-team
-/.githooks/                 @your-org/architecture-team
-/.github/                   @your-org/architecture-team
-/packages/*/package.json    @your-org/architecture-team
-/packages/*/tsconfig.json   @your-org/architecture-team
-/turbo.json                 @your-org/architecture-team
-/packages/*/turbo.json      @your-org/architecture-team
+# Copy to CODEOWNERS and replace these illustrative owner handles.
+# Each package owner reviews both its implementation and its public API.
+/packages/catalog/       @catalog-owner
+/packages/logistics/     @logistics-owner
+/packages/pricing/       @pricing-owner
+/apps/demo/              @application-owner
