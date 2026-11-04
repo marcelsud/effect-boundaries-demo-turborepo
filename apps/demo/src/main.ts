@@ -2,13 +2,25 @@ import assert from "node:assert/strict";
 import { Effect, Layer, Schema } from "effect";
 import {
   Catalog,
+  CatalogError,
   CatalogLive,
   GetProductRequest,
   Product,
   ProductUnavailable,
 } from "@shop/catalog";
-import { Logistics, LogisticsLive, Quantity } from "@shop/logistics";
-import { Pricing, PricingLive, Price, PriceUnavailable } from "@shop/pricing";
+import {
+  Logistics,
+  LogisticsError,
+  LogisticsLive,
+  Quantity,
+} from "@shop/logistics";
+import {
+  Pricing,
+  PricingError,
+  PricingLive,
+  Price,
+  PriceUnavailable,
+} from "@shop/pricing";
 
 const Dependencies = Layer.mergeAll(LogisticsLive, PricingLive);
 const CommerceLive = CatalogLive.pipe(Layer.provide(Dependencies));
@@ -19,7 +31,17 @@ await Effect.runPromise(
     // Simulate untrusted application input. This is JSON, not a transport or RPC.
     const request = yield* Schema.decodeUnknownEffect(
       Schema.fromJsonString(GetProductRequest),
-    )('{"productId":"p-1"}');
+    )('{"productId":"p-1"}').pipe(
+      Effect.mapError(
+        (cause) =>
+          new CatalogError({
+            operation: "Catalog.getProduct",
+            stage: "request",
+            message: "Catalog.getProduct failed to decode request JSON",
+            cause,
+          }),
+      ),
+    );
     const product = yield* catalog.getProduct(request);
     const encoded = yield* Schema.encodeEffect(Product)(product);
     assert.deepEqual(encoded, {
@@ -42,17 +64,28 @@ await Effect.runPromise(
       .pipe(Effect.flip);
     assert.ok(missing instanceof ProductUnavailable);
     const errorJson = yield* Schema.encodeEffect(
-      Schema.fromJsonString(ProductUnavailable),
+      Schema.fromJsonString(Schema.toCodecJson(ProductUnavailable)),
     )(missing);
     const restored = yield* Schema.decodeUnknownEffect(
-      Schema.fromJsonString(ProductUnavailable),
+      Schema.fromJsonString(Schema.toCodecJson(ProductUnavailable)),
     )(errorJson);
     assert.ok(restored instanceof ProductUnavailable);
     assert.equal(restored.productId, "missing");
     const invalid = yield* catalog
       .getProduct({ productId: "" })
       .pipe(Effect.flip);
-    assert.ok(Schema.isSchemaError(invalid));
+    assert.ok(invalid instanceof CatalogError);
+    assert.equal(invalid.operation, "Catalog.getProduct");
+    assert.equal(invalid.stage, "request");
+    assert.ok(Schema.isSchemaError(invalid.cause));
+    assert.equal(typeof invalid.cause.stack, "string");
+    const codec = Schema.fromJsonString(Schema.toCodecJson(CatalogError));
+    const encodedError = yield* Schema.encodeEffect(codec)(invalid);
+    const decodedError = yield* Schema.decodeUnknownEffect(codec)(encodedError);
+    assert.ok(decodedError instanceof CatalogError);
+    assert.equal(decodedError.stage, "request");
+    assert.equal(decodedError.cause.message, invalid.cause.message);
+    assert.equal(decodedError.cause.stack, invalid.cause.stack);
     console.log(
       "PASS Catalog decodes inputs/storage, composes schemas, and round-trips products/errors",
     );
@@ -69,26 +102,30 @@ await Effect.runPromise(
       amountCents: 19900,
       currency: "BRL",
     });
-    assert.ok(
-      Schema.isSchemaError(
-        yield* logistics.getAvailability({ productId: "" }).pipe(Effect.flip),
-      ),
-    );
-    assert.ok(
-      Schema.isSchemaError(
-        yield* pricing.getPrice({ productId: "" }).pipe(Effect.flip),
-      ),
-    );
+    const invalidInventory = yield* logistics
+      .getAvailability({ productId: "" })
+      .pipe(Effect.flip);
+    assert.ok(invalidInventory instanceof LogisticsError);
+    assert.equal(invalidInventory.operation, "Logistics.getAvailability");
+    assert.equal(invalidInventory.stage, "request");
+    assert.ok(Schema.isSchemaError(invalidInventory.cause));
+    const invalidPrice = yield* pricing
+      .getPrice({ productId: "" })
+      .pipe(Effect.flip);
+    assert.ok(invalidPrice instanceof PricingError);
+    assert.equal(invalidPrice.operation, "Pricing.getPrice");
+    assert.equal(invalidPrice.stage, "request");
+    assert.ok(Schema.isSchemaError(invalidPrice.cause));
     const missing = yield* pricing
       .getPrice({ productId: "missing" })
       .pipe(Effect.flip);
     assert.ok(missing instanceof PriceUnavailable);
     const errorJson = yield* Schema.encodeEffect(
-      Schema.fromJsonString(PriceUnavailable),
+      Schema.fromJsonString(Schema.toCodecJson(PriceUnavailable)),
     )(missing);
     assert.ok(
       (yield* Schema.decodeUnknownEffect(
-        Schema.fromJsonString(PriceUnavailable),
+        Schema.fromJsonString(Schema.toCodecJson(PriceUnavailable)),
       )(errorJson)) instanceof PriceUnavailable,
     );
 
@@ -125,34 +162,47 @@ await Effect.runPromise(
   }).pipe(Effect.provide(Dependencies)),
 );
 
-// Exercise dependency failures as well as values that satisfy TypeScript's
-// primitive types but violate the public schema's runtime refinements.
+// Keep an actual SchemaError object to verify that each application layer
+// retains the exact original cause instead of replacing it with a message.
+const schemaFailure = await Effect.runPromise(
+  Schema.decodeUnknownEffect(Price)({ amountCents: -1, currency: "BRL" }).pipe(
+    Effect.flip,
+  ),
+);
+assert.ok(Schema.isSchemaError(schemaFailure));
+assert.match(schemaFailure.message, /amountCents/);
+const pricingFailure = new PricingError({
+  operation: "Pricing.getPrice",
+  stage: "storage",
+  message: "Pricing.getPrice failed at storage",
+  cause: schemaFailure,
+});
+const missingPrice = new PriceUnavailable({
+  productId: "p-1",
+  message: "Price not found",
+});
 const scenarios = [
   {
     pricing: Layer.succeed(Pricing, {
-      getPrice: () =>
-        Effect.fail(
-          new PriceUnavailable({
-            productId: "p-1",
-            message: "Price not found",
-          }),
-        ),
+      getPrice: () => Effect.fail(missingPrice),
     }),
     error: ProductUnavailable,
+    cause: missingPrice,
   },
   {
     pricing: Layer.succeed(Pricing, {
-      getPrice: () =>
-        Schema.decodeUnknownEffect(Price)({ amountCents: -1, currency: "BRL" }),
+      getPrice: () => Effect.fail(pricingFailure),
     }),
-    error: Schema.SchemaError,
+    error: CatalogError,
+    cause: pricingFailure,
   },
   {
     pricing: Layer.succeed(Pricing, {
       getPrice: () =>
         Effect.succeed({ amountCents: -1, currency: "BRL" as const }),
     }),
-    error: Schema.SchemaError,
+    error: CatalogError,
+    cause: undefined,
   },
 ];
 for (const scenario of scenarios) {
@@ -166,9 +216,49 @@ for (const scenario of scenarios) {
         .getProduct({ productId: "p-1" })
         .pipe(Effect.flip);
       assert.ok(result instanceof scenario.error);
+      if (scenario.cause) assert.strictEqual(result.cause, scenario.cause);
+      if (result instanceof CatalogError) {
+        assert.equal(result.operation, "Catalog.getProduct");
+        assert.equal(result.stage, scenario.cause ? "dependency" : "response");
+        if (result.cause instanceof PricingError) {
+          assert.strictEqual(result.cause.cause, schemaFailure);
+          const codec = Schema.fromJsonString(Schema.toCodecJson(CatalogError));
+          const json = yield* Schema.encodeEffect(codec)(result);
+          const decoded = yield* Schema.decodeUnknownEffect(codec)(json);
+          assert.equal(decoded.operation, "Catalog.getProduct");
+          assert.equal(decoded.stage, "dependency");
+          assert.equal(decoded.cause.name, "PricingError");
+          assert.equal(decoded.cause.message, pricingFailure.message);
+          assert.equal(decoded.cause.stack, pricingFailure.stack);
+          assert.ok(decoded.cause.cause instanceof Error);
+          assert.equal(decoded.cause.cause.message, schemaFailure.message);
+          assert.equal(decoded.cause.cause.stack, schemaFailure.stack);
+          console.log(
+            "Trace: Catalog.getProduct [dependency] -> Pricing.getPrice [storage] -> SchemaError",
+          );
+        } else {
+          assert.ok(Schema.isSchemaError(result.cause));
+        }
+      }
     }).pipe(Effect.provide(live)),
   );
 }
 console.log(
-  "PASS Catalog maps domain failures, preserves validation failures and validates final responses",
+  "PASS service-owned application errors preserve operations, stages, stacks and original cause chains",
+);
+
+// At the JavaScript boundary, runPromise rejects with the application error.
+await assert.rejects(
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const catalog = yield* Catalog;
+      return yield* catalog.getProduct({ productId: "" });
+    }).pipe(Effect.provide(CommerceLive)),
+  ),
+  (error: unknown) => {
+    assert.ok(error instanceof CatalogError);
+    assert.equal(error.stage, "request");
+    assert.ok(Schema.isSchemaError(error.cause));
+    return true;
+  },
 );

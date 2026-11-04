@@ -1,5 +1,6 @@
 export {
   Catalog,
+  CatalogError,
   CatalogLive,
   GetProductRequest,
   Product,

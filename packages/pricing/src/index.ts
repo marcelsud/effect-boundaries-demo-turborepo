@@ -1,5 +1,6 @@
 export {
   Pricing,
+  PricingError,
   PricingLive,
   GetPriceRequest,
   Price,

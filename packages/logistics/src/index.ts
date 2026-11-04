@@ -1,5 +1,6 @@
 export {
   Logistics,
+  LogisticsError,
   LogisticsLive,
   GetAvailabilityRequest,
   Quantity,

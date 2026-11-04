@@ -100,21 +100,67 @@ before using them as domain data.
   supported currency is `BRL`.
 - Catalog's Product schema composes Pricing's public Price schema and Logistics'
   public Quantity schema.
-- DTO types are derived from schemas. Domain errors use `Schema.TaggedError`
-  (Effect 4.1.2); decode failures stay in the `Schema.SchemaError` failure channel.
+- DTO types are derived from schemas. Domain and application errors use
+  `Schema.TaggedError` (Effect 4.1.2). Each service maps schema validation failures
+  to its own public error: `CatalogError`, `LogisticsError`, or `PricingError`.
 - The application decodes a JSON request and encodes/decodes products and domain
   errors using the same public schemas. No transport or RPC is introduced.
 
 The runtime assertions cover invalid requests, invalid amounts/currency and
 quantities, missing products/prices, JSON round trips, and a provider returning
-an invalid numeric refinement. Catalog preserves dependency validation failures
-and maps Pricing domain failures into its own public error schema. The final
+an invalid numeric refinement. Catalog wraps dependency failures with the original cause
+and maps Pricing not-found failures into its own public error schema, retaining
+their cause too. The final
 Catalog response is validated too.
 
 Run `bun run format` to apply Prettier, or `bun run format:check` to verify it.
 Generated outputs, Bun's lockfile, patch files, and captured terminal output are
 excluded from formatting. Example patch contents use the same formatter as the
 source files.
+
+## Application errors and traceable causes
+
+Public service signatures expose service-owned errors instead of generic
+`Schema.SchemaError`. For example, Catalog returns
+`Effect<Product, ProductUnavailable | CatalogError>`.
+
+Each application error includes:
+
+- `operation`: the public operation, such as `Catalog.getProduct`.
+- `stage`: `request`, `storage`, `dependency`, or `response`.
+- `message`: the operation and stage in a readable form.
+- `cause`: the exact original Error object, including its validation details and
+  stack trace. Dependency wrappers retain the nested application's error too.
+
+Inside a service, schema decoding maps the typed failure:
+
+```ts
+const input =
+  yield *
+  Schema.decodeUnknownEffect(GetProductRequest)(request).pipe(
+    Effect.mapError(catalogFailure("request")),
+  );
+```
+
+`catalogFailure` constructs a `CatalogError` with the stage and original cause.
+This remains a typed Effect failure; it does not turn validation into a defect.
+An unhandled `Effect.runPromise` rejects with the application error.
+
+The methods use named `Effect.fn` operations for Effect's span and stack-frame
+metadata. The demo verifies this nested failure path:
+
+```text
+CatalogError: Catalog.getProduct [dependency]
+  cause: PricingError: Pricing.getPrice [storage]
+    cause: SchemaError: invalid amountCents
+```
+
+For diagnostic JSON, use
+`Schema.fromJsonString(Schema.toCodecJson(CatalogError))`. The cause schema is
+`Schema.ErrorInstance({ includeStack: true })`, preserving error names,
+messages, stacks, and nested causes. JSON-decoded nested causes are ordinary
+Error objects; the original typed error objects and SchemaError issues remain
+available in memory before encoding. The demo tests both forms.
 
 ## Team-owned API changes
 

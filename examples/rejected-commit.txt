@@ -5,7 +5,7 @@ PASS TypeScript alone accepts the internally supplied private provider
 $ git diff --cached -- packages/catalog/src/Catalog.ts
 
 diff --git a/packages/catalog/src/Catalog.ts b/packages/catalog/src/Catalog.ts
-index 8af7eb1..eb2dbf4 100644
+index f92697c..4b374a1 100644
 --- a/packages/catalog/src/Catalog.ts
 +++ b/packages/catalog/src/Catalog.ts
 @@ -1,4 +1,8 @@
@@ -17,7 +17,7 @@ index 8af7eb1..eb2dbf4 100644
  import { Logistics, Quantity } from "@shop/logistics";
  import { Pricing, Price } from "@shop/pricing";
  import {
-@@ -37,45 +41,29 @@ export class Catalog extends Context.Service<
+@@ -59,51 +63,30 @@ export class Catalog extends Context.Service<
    }
  >()("@shop/Catalog") {}
 
@@ -30,34 +30,14 @@ index 8af7eb1..eb2dbf4 100644
 -      const logistics = yield* Logistics;
 -      const pricing = yield* Pricing;
 -      return {
--        getProduct: (request) =>
--          Effect.gen(function* () {
--            const input =
--              yield* Schema.decodeUnknownEffect(GetProductRequest)(request);
--            const row = yield* products.find(input.productId);
--            if (row === undefined) {
--              return yield* new ProductUnavailable({
--                productId: input.productId,
--                message: "Product not found",
--              });
--            }
--            const product =
--              yield* Schema.decodeUnknownEffect(ProductRecord)(row);
--            const availableQuantity = yield* logistics.getAvailability(input);
--            const price = yield* pricing.getPrice(input).pipe(
--              Effect.mapError((error) =>
--                error._tag === "PriceUnavailable"
--                  ? new ProductUnavailable({
--                      productId: input.productId,
--                      message: error.message,
--                    })
--                  : error,
--              ),
--            );
--            return yield* Schema.decodeUnknownEffect(Product)({
--              ...product,
--              availableQuantity,
--              price,
+-        getProduct: Effect.fn("Catalog.getProduct")(function* (
+-          request: GetProductRequest,
+-        ) {
+-          const input = yield* Schema.decodeUnknownEffect(GetProductRequest)(
+-            request,
+-          ).pipe(Effect.mapError(catalogFailure("request")));
+-          const row = yield* products.find(input.productId);
+-          if (row === undefined) {
 +export const CatalogLive: Layer.Layer<Catalog> = Layer.effect(
 +  Catalog,
 +  Effect.gen(function* () {
@@ -65,26 +45,47 @@ index 8af7eb1..eb2dbf4 100644
 +    return {
 +      getProduct: (request) =>
 +        Effect.gen(function* () {
-+          const { productId } =
-+            yield* Schema.decodeUnknownEffect(GetProductRequest)(request);
++          const { productId } = yield* Schema.decodeUnknownEffect(
++            GetProductRequest,
++          )(request).pipe(Effect.mapError(catalogFailure("request")));
 +          const price = yield* prices.find(productId);
 +          if (price === undefined) {
-+            return yield* new ProductUnavailable({
+             return yield* new ProductUnavailable({
+-              productId: input.productId,
+-              message: "Product not found",
 +              productId,
 +              message: "Price not found",
              });
--          }),
--      };
--    }),
--  ).pipe(Layer.provide(ProductRepositoryLive));
-+          }
-+          return yield* Schema.decodeUnknownEffect(Product)({
+           }
+-          const product = yield* Schema.decodeUnknownEffect(ProductRecord)(
+-            row,
+-          ).pipe(Effect.mapError(catalogFailure("storage")));
+-          const availableQuantity = yield* logistics
+-            .getAvailability(input)
+-            .pipe(Effect.mapError(catalogFailure("dependency")));
+-          const price = yield* pricing.getPrice(input).pipe(
+-            Effect.mapError((error) =>
+-              error._tag === "PriceUnavailable"
+-                ? new ProductUnavailable({
+-                    productId: input.productId,
+-                    message: error.message,
+-                    cause: error,
+-                  })
+-                : catalogFailure("dependency")(error),
+-            ),
+-          );
+           return yield* Schema.decodeUnknownEffect(Product)({
+-            ...product,
+-            availableQuantity,
 +            id: productId,
 +            name: "Keyboard",
 +            availableQuantity: 12,
-+            price,
-+          });
-+        }),
+             price,
+           }).pipe(Effect.mapError(catalogFailure("response")));
+         }),
+-      };
+-    }),
+-  ).pipe(Layer.provide(ProductRepositoryLive));
 +    };
 +  }),
 +).pipe(Layer.provide(PriceRepositoryLive));
@@ -98,7 +99,7 @@ $ turbo run build demo
    • Running build, demo in 4 packages
    • Remote caching disabled
 
-//:boundaries: cache bypass, force executing b30cf95d2fd77a7b
+//:boundaries: cache bypass, force executing 36d08996612c9f91
 //:boundaries: $ turbo boundaries
 //:boundaries: • turbo 2.11.10
 //:boundaries: Checking packages...
@@ -120,7 +121,7 @@ $ turbo run build demo
 
  Tasks:    0 successful, 1 total
 Cached:    0 cached, 1 total
-  Time:    485ms
+  Time:    487ms
 Failed:    //#boundaries
 
  ERROR  run failed: command  exited (1)
