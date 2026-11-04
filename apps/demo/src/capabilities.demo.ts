@@ -6,7 +6,6 @@ import {
   ProductListing,
   ProductListingLive,
   ProductListingError,
-  ProductListingSnapshot,
   ProductsView,
   ProductsViewLive,
   ProductsStream,
@@ -36,7 +35,7 @@ import { PriceViewLive, PricingLive } from "@shop/pricing";
 import {
   applyListingChange,
   ListingProjectionError,
-  restoreListing,
+  ListingProjectionState,
 } from "./product-listing.projection.js";
 
 const ReadsLive = Layer.mergeAll(
@@ -70,9 +69,12 @@ export const runCapabilityExamples = () =>
       const deliveries = yield* RequestDelivery;
       const stockout = yield* StockoutPolicy;
 
-      let projection = yield* listing.snapshot;
-      assert.deepEqual(projection.cursors, { products: 0, inventory: 0 });
-      assert.equal(projection.items[0]?.name, "Keyboard");
+      const initialListing = yield* listing.list;
+      assert.equal(initialListing[0]?.name, "Keyboard");
+      let projection: ListingProjectionState = {
+        updates: [],
+        cursors: { products: 0, inventory: 0 },
+      };
 
       const renamed = yield* rename.execute({
         productId: "p-1",
@@ -92,21 +94,22 @@ export const runCapabilityExamples = () =>
       for (const event of firstBatch)
         projection = yield* applyListingChange(projection, event);
       assert.deepEqual(projection.cursors, { products: 1, inventory: 1 });
-      assert.equal(projection.items[0]?.name, "Mechanical Keyboard");
-      assert.equal(projection.items[0]?.availableQuantity, 5);
+      assert.equal(projection.updates[0]?.name, "Mechanical Keyboard");
+      assert.equal(projection.updates[0]?.availableQuantity, 5);
       assert.equal(
         (yield* catalog.getProduct({ productId: "p-1" })).name,
         "Mechanical Keyboard",
       );
-      assert.deepEqual(yield* listing.snapshot, projection);
+      const currentListing = yield* listing.list;
+      assert.equal(currentListing[0]?.name, projection.updates[0]?.name);
+      assert.equal(
+        currentListing[0]?.availableQuantity,
+        projection.updates[0]?.availableQuantity,
+      );
 
-      // Persist state and offsets together. A new consumer restores this JSON.
-      const checkpoint = yield* Schema.encodeEffect(
-        Schema.fromJsonString(ProductListingSnapshot),
-      )(projection);
+      // Continue from the consumer's own offsets after more events arrive.
       yield* rename.execute({ productId: "p-1", name: "Travel Keyboard" });
       yield* setInventory.execute({ productId: "p-1", quantity: 2 });
-      projection = yield* restoreListing(checkpoint);
       const resumed = yield* Stream.runCollect(
         listing.changes(projection.cursors),
       );
@@ -115,13 +118,29 @@ export const runCapabilityExamples = () =>
       for (const event of resumed)
         projection = yield* applyListingChange(projection, event);
       assert.deepEqual(projection.cursors, { products: 2, inventory: 2 });
-      assert.equal(projection.items[0]?.name, "Travel Keyboard");
-      assert.equal(projection.items[0]?.availableQuantity, 2);
-      assert.deepEqual(yield* listing.snapshot, projection);
+      assert.equal(projection.updates[0]?.name, "Travel Keyboard");
+      assert.equal(projection.updates[0]?.availableQuantity, 2);
+      const updatedListing = yield* listing.list;
+      assert.equal(updatedListing[0]?.name, projection.updates[0]?.name);
+      assert.equal(
+        updatedListing[0]?.availableQuantity,
+        projection.updates[0]?.availableQuantity,
+      );
       assert.deepEqual(
         yield* Stream.runCollect(listing.changes(projection.cursors)),
         [],
       );
+
+      let replayed: ListingProjectionState = {
+        updates: [],
+        cursors: { products: 0, inventory: 0 },
+      };
+      for (const event of yield* Stream.runCollect(
+        listing.changes(replayed.cursors),
+      )) {
+        replayed = yield* applyListingChange(replayed, event);
+      }
+      assert.deepEqual(replayed, projection);
 
       // Two consumers may read independently. Reads never acknowledge an offset.
       assert.equal(
@@ -142,11 +161,13 @@ export const runCapabilityExamples = () =>
       }).pipe(Effect.flip);
       assert.ok(gap instanceof ListingProjectionError);
       assert.equal(gap.stage, "cursor");
-      const badSnapshot = yield* restoreListing(
-        '{"items":[],"cursors":{"products":-1,"inventory":0}}',
-      ).pipe(Effect.flip);
-      assert.ok(badSnapshot instanceof ListingProjectionError);
-      assert.ok(Schema.isSchemaError(badSnapshot.cause));
+      const invalidChange = yield* applyListingChange(projection, {
+        ...renamed,
+        name: "",
+      }).pipe(Effect.flip);
+      assert.ok(invalidChange instanceof ListingProjectionError);
+      assert.equal(invalidChange.stage, "request");
+      assert.ok(Schema.isSchemaError(invalidChange.cause));
 
       const futureCursor = yield* Stream.runCollect(
         listing.changes({ products: 99, inventory: 2 }),
@@ -166,7 +187,7 @@ export const runCapabilityExamples = () =>
       assert.ok(futureInventory instanceof InventoryError);
       assert.equal(futureInventory.stage, "cursor");
 
-      const beforeRejected = yield* products.snapshot;
+      const beforeRejected = yield* products.list;
       for (const request of [
         { productId: "missing", name: "Name" },
         { productId: "p-1", name: "   " },
@@ -181,13 +202,13 @@ export const runCapabilityExamples = () =>
         .pipe(Effect.flip);
       assert.ok(invalidName instanceof ProductsError);
       assert.equal(invalidName.stage, "request");
-      assert.deepEqual(yield* products.snapshot, beforeRejected);
+      assert.deepEqual(yield* products.list, beforeRejected);
       const invalidQuantity = yield* setInventory
         .execute({ productId: "p-1", quantity: -1 })
         .pipe(Effect.flip);
       assert.ok(invalidQuantity instanceof InventoryError);
       assert.equal(invalidQuantity.stage, "request");
-      assert.equal((yield* inventory.snapshot).cursor, 2);
+      assert.deepEqual(yield* Stream.runCollect(inventoryEvents.events(2)), []);
 
       // Concurrent writers receive consecutive cursors; the view matches the log.
       yield* Effect.all(
@@ -203,15 +224,15 @@ export const runCapabilityExamples = () =>
         [3, 4],
       );
       assert.equal(
-        (yield* inventory.snapshot).inventory[0]?.quantity,
+        (yield* inventory.list)[0]?.quantity,
         concurrent[1]?.quantity,
       );
       console.log(
-        "PASS public product composes team views/streams; consumer snapshots resume with independent cursors, redelivery and gap checks",
+        "PASS public product composes team views/streams; consumer projections replay with independent cursors, redelivery and gap checks",
       );
 
       // The consuming worker runs policy reactions separately from projections.
-      const stockoutCursor = (yield* inventory.snapshot).cursor;
+      const stockoutCursor = concurrent.at(-1)!.cursor;
       yield* setInventory.execute({ productId: "p-1", quantity: 0 });
       const reactions = yield* Stream.runCollect(
         inventoryEvents

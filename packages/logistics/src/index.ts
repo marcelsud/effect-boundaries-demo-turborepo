@@ -6,7 +6,7 @@ export {
   Quantity,
 } from "./internal/logistics.service.js";
 export {
-  InventorySnapshot,
+  InventoryItem,
   InventoryError,
   InventoryView,
   InventoryViewLive,

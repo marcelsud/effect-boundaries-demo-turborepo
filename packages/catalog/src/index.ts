@@ -8,7 +8,6 @@ export {
 } from "./internal/catalog.service.js";
 export {
   ProductSummary,
-  ProductsSnapshot,
   ProductsError,
   ProductsView,
   ProductsViewLive,
@@ -27,7 +26,6 @@ export {
 export {
   ListingCursors,
   ListingChange,
-  ProductListingSnapshot,
   ProductListingError,
   ProductListing,
   ProductListingLive,

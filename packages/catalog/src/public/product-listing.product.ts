@@ -14,11 +14,6 @@ export const ListingCursors = Schema.Struct({
   inventory: Schema.Natural,
 });
 export type ListingCursors = typeof ListingCursors.Type;
-export const ProductListingSnapshot = Schema.Struct({
-  items: Schema.Array(Product),
-  cursors: ListingCursors,
-});
-export type ProductListingSnapshot = typeof ProductListingSnapshot.Type;
 export const ListingChange = Schema.Union([ProductEvent, InventoryEvent]);
 export type ListingChange = typeof ListingChange.Type;
 
@@ -26,7 +21,7 @@ export class ProductListingError extends Schema.TaggedError<ProductListingError>
   "ProductListingError",
   {
     operation: Schema.Literals([
-      "ProductListing.snapshot",
+      "ProductListing.list",
       "ProductListing.changes",
     ]),
     stage: Schema.Literals(["request", "dependency", "response"]),
@@ -50,10 +45,7 @@ const listingFailure =
 export class ProductListing extends Context.Service<
   ProductListing,
   {
-    readonly snapshot: Effect.Effect<
-      ProductListingSnapshot,
-      ProductListingError
-    >;
+    readonly list: Effect.Effect<ReadonlyArray<Product>, ProductListingError>;
     readonly changes: (
       after: ListingCursors,
     ) => Stream.Stream<ListingChange, ProductListingError>;
@@ -70,48 +62,36 @@ export const ProductListingLive = Layer.effect(
     const inventoryEvents = yield* InventoryStream;
     const prices = yield* PriceView;
     return {
-      snapshot: Effect.fn("ProductListing.snapshot")(function* () {
-        // Each source snapshot is atomic with its cursor. This is a cursor vector,
-        // not a transaction across teams. Pricing is read-only in this example.
-        const productState = yield* products.snapshot.pipe(
-          Effect.mapError(
-            listingFailure("ProductListing.snapshot", "dependency"),
-          ),
+      list: Effect.fn("ProductListing.list")(function* () {
+        // Query views answer a read question; stream offsets are managed separately.
+        const productRows = yield* products.list.pipe(
+          Effect.mapError(listingFailure("ProductListing.list", "dependency")),
         );
-        const inventoryState = yield* inventory.snapshot.pipe(
-          Effect.mapError(
-            listingFailure("ProductListing.snapshot", "dependency"),
-          ),
+        const inventoryRows = yield* inventory.list.pipe(
+          Effect.mapError(listingFailure("ProductListing.list", "dependency")),
         );
-        const items = yield* Effect.forEach(productState.products, (product) =>
+        const items = yield* Effect.forEach(productRows, (product) =>
           Effect.gen(function* () {
             const price = yield* prices
               .get({ productId: product.id })
               .pipe(
                 Effect.mapError(
-                  listingFailure("ProductListing.snapshot", "dependency"),
+                  listingFailure("ProductListing.list", "dependency"),
                 ),
               );
             return {
               ...product,
               price,
               availableQuantity:
-                inventoryState.inventory.find(
-                  (item) => item.productId === product.id,
-                )?.quantity ?? 0,
+                inventoryRows.find((item) => item.productId === product.id)
+                  ?.quantity ?? 0,
             };
           }),
         );
-        return yield* Schema.decodeUnknownEffect(ProductListingSnapshot)({
+        return yield* Schema.decodeUnknownEffect(Schema.Array(Product))(
           items,
-          cursors: {
-            products: productState.cursor,
-            inventory: inventoryState.cursor,
-          },
-        }).pipe(
-          Effect.mapError(
-            listingFailure("ProductListing.snapshot", "response"),
-          ),
+        ).pipe(
+          Effect.mapError(listingFailure("ProductListing.list", "response")),
         );
       })(),
       changes: (after: ListingCursors) =>

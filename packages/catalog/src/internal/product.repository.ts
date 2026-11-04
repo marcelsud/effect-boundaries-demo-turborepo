@@ -12,7 +12,7 @@ export class ProductRepository extends Context.Service<
   ProductRepository,
   {
     readonly find: (productId: string) => Effect.Effect<unknown>;
-    readonly snapshot: Effect.Effect<unknown>;
+    readonly list: Effect.Effect<unknown>;
     readonly events: Effect.Effect<ReadonlyArray<ProductEvent>>;
     readonly rename: (
       productId: string,
@@ -34,9 +34,7 @@ export const ProductRepositoryLive = Layer.effect(
         Ref.get(state).pipe(
           Effect.map((s) => s.products.find((p) => p.id === id)),
         ),
-      snapshot: Ref.get(state).pipe(
-        Effect.map((s) => ({ products: s.products, cursor: s.events.length })),
-      ),
+      list: Ref.get(state).pipe(Effect.map((s) => s.products)),
       events: Ref.get(state).pipe(Effect.map((s) => s.events)),
       rename: (id, name) =>
         Ref.modify(

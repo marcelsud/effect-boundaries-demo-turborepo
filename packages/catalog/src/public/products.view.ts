@@ -7,17 +7,12 @@ import {
 
 export const ProductSummary = ProductRecord;
 export type ProductSummary = typeof ProductSummary.Type;
-export const ProductsSnapshot = Schema.Struct({
-  products: Schema.Array(ProductSummary),
-  cursor: Schema.Natural,
-});
-export type ProductsSnapshot = typeof ProductsSnapshot.Type;
 
 export class ProductsError extends Schema.TaggedError<ProductsError>()(
   "ProductsError",
   {
     operation: Schema.Literals([
-      "ProductsView.snapshot",
+      "ProductsView.list",
       "ProductsStream.events",
       "RenameProduct.execute",
     ]),
@@ -40,7 +35,7 @@ export const productsFailure =
 export class ProductsView extends Context.Service<
   ProductsView,
   {
-    readonly snapshot: Effect.Effect<ProductsSnapshot, ProductsError>;
+    readonly list: Effect.Effect<ReadonlyArray<ProductSummary>, ProductsError>;
   }
 >()("@shop/catalog/ProductsView") {}
 
@@ -49,10 +44,12 @@ export const ProductsViewLive = Layer.effect(
   Effect.gen(function* () {
     const products = yield* ProductRepository;
     return {
-      snapshot: Effect.fn("ProductsView.snapshot")(function* () {
-        return yield* products.snapshot.pipe(
-          Effect.flatMap(Schema.decodeUnknownEffect(ProductsSnapshot)),
-          Effect.mapError(productsFailure("ProductsView.snapshot", "storage")),
+      list: Effect.fn("ProductsView.list")(function* () {
+        return yield* products.list.pipe(
+          Effect.flatMap(
+            Schema.decodeUnknownEffect(Schema.Array(ProductSummary)),
+          ),
+          Effect.mapError(productsFailure("ProductsView.list", "storage")),
         );
       })(),
     };

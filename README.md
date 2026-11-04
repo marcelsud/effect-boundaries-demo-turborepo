@@ -155,10 +155,10 @@ flow across all three team packages:
 | Capability                                           | Owner and implementation                 | Behavior                                                                                                                       |
 | ---------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `RenameProduct`                                      | Catalog, `rename-product.command.ts`     | Validates a request and asks the private aggregate to decide a rename. Missing products and blank names are domain rejections. |
-| `ProductsView` / `ProductsStream`                    | Catalog                                  | Exposes product snapshots and rename events with consumer-owned cursors.                                                       |
-| `SetInventory` / `InventoryView` / `InventoryStream` | Logistics                                | Updates stock and exposes snapshots and inventory events.                                                                      |
+| `ProductsView` / `ProductsStream`                    | Catalog                                  | Exposes a product query view and rename events with consumer-owned cursors.                                                    |
+| `SetInventory` / `InventoryView` / `InventoryStream` | Logistics                                | Updates stock and exposes a stock query view and inventory events.                                                             |
 | `PriceView`                                          | Pricing                                  | Exposes the existing schema-validated price query as a read-only view.                                                         |
-| `ProductListing`                                     | Catalog, `product-listing.product.ts`    | Combines the product view, inventory view, and Pricing's price view; publishes a snapshot and both change feeds.               |
+| `ProductListing`                                     | Catalog, `product-listing.product.ts`    | Combines the product, inventory, and price views into a listing query and publishes both change feeds.                         |
 | `StockoutPolicy`                                     | Logistics, `stockout.policy.ts`          | Reacts to zero inventory by requesting a replenishment delivery of 12 units.                                                   |
 | `RequestDelivery`                                    | Logistics, `request-delivery.command.ts` | Validates input, calls a private carrier facade, and returns a domain-shaped delivery.                                         |
 
@@ -169,38 +169,49 @@ The repository updates the read model, event history, and cursor in one Effect
 The existing Catalog and Logistics services read those same stores; the demo
 verifies that a rename is visible through `Catalog.getProduct` too.
 
-### Snapshots, streams, and consumer projections
+### Query views and consumer projections
 
-Each team's view returns state and a high-water cursor atomically. Cursor `0`
-means before the first event; `events(after)` emits events with a strictly greater
-cursor. Each read captures a finite batch of retained history. Poll again with
-your saved cursor for subsequent changes. Future or invalid cursors produce
-schema-backed application errors.
+A view answers a read question with state derived from events. This follows
+[Alchemy's view vocabulary](https://alchemy.run/domain/view/), implemented here
+with plain Effect:
 
-`ProductListing.snapshot` joins the three teams' views and returns
-`{ items, cursors: { products, inventory } }`. Each source has its own cursor;
-there is no global cursor or transaction across teams. Pricing is read-only in
-this demo, so prices are included in the snapshot without a price-change feed.
-`ProductListing.changes(cursors)` concatenates the two finite event batches,
-preserving order within each source without promising a global event order.
+- `ProductsView.list` answers which products exist and their current names.
+- `InventoryView.list` answers how much stock each product has.
+- `PriceView.get` answers the current price of one product. This is a thin adapter
+  around the existing Pricing query, not an independently materialized read model.
+- `ProductListing.list` joins those public capabilities into the data a product
+  listing needs. It returns products, quantities, and prices, without offsets.
+
+The demo updates its materialized state inline with each write. It does not
+implement Alchemy's asynchronous view delivery, keyed runtime, or consistency
+receipts. Adding a read-only screen does not require a change to command rules.
+
+Stream offsets are a separate concern. Cursor `0` means before the first event;
+`events(after)` emits events with a strictly greater cursor. Each read captures a
+finite batch of retained history. Poll again with your saved cursor for subsequent
+changes. Future or invalid cursors produce schema-backed application errors.
+
+`ProductListing.changes({ products, inventory })` concatenates the two event
+batches. It preserves order within each source without promising a global event
+order. Pricing is read-only in this demo, so its price is available through the
+query view without a price-change feed.
 
 [The consuming app's projection](apps/demo/src/product-listing.projection.ts)
-maintains the listing and its cursor vector. It ignores already-applied events,
-rejects sequence gaps, and validates restored snapshots with Effect Schema.
-The example:
+starts empty and folds changes into the latest observed name and quantity for
+each product, plus its own cursor vector. It ignores redelivered events and
+rejects sequence gaps. It records observed changes; seeded products that have
+never changed are available through query views rather than the change history.
+Query results are not used to initialize the consumer's offsets.
 
-1. Takes a listing snapshot at `{ products: 0, inventory: 0 }`.
-2. Renames the product and changes inventory, then projects both event feeds.
-3. Serializes the listing and its cursors together as one JSON snapshot.
-4. Produces more events, restores that JSON, and resumes after each saved cursor.
-5. Verifies independent consumers, duplicate delivery, sequence gaps, invalid
-   snapshots/cursors, rejected commands, and concurrent inventory writes.
+The example queries views, issues commands, folds both feeds, continues from its
+own offsets, and rebuilds the same projection by replaying history from cursor
+zero. It also verifies independent consumers, duplicate delivery, sequence gaps,
+invalid events/cursors, rejected commands, and concurrent inventory writes.
 
-The restart is simulated by a JSON round trip while producer state remains
-alive. These are in-memory, append-only histories, not durable logs. State,
-history, and idempotency records reset when their Layer is rebuilt. For a real
-worker, persist producer history and consumer state-plus-cursors transactionally;
-add a retention/expired-cursor contract before pruning events.
+Histories, projections, and carrier idempotency records are in memory and reset
+when their Layer is rebuilt. A production worker needs durable producer history
+and transactional consumer state/offset storage; add an expired-cursor contract
+before pruning events.
 
 ### Policies and private external adapters
 
@@ -232,7 +243,7 @@ StockoutPolicyError [dependency]
 Successful execution ends with these additional assertions:
 
 ```text
-PASS public product composes team views/streams; consumer snapshots resume with independent cursors, redelivery and gap checks
+PASS public product composes team views/streams; consumer projections replay with independent cursors, redelivery and gap checks
 PASS stockout policy requests an idempotent delivery through a private carrier adapter; schema and SDK failures retain their cause chain
 ```
 

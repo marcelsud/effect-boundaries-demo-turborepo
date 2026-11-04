@@ -5,19 +5,17 @@ import {
   InventoryRepositoryLive,
 } from "../internal/inventory.repository.js";
 
-export const InventorySnapshot = Schema.Struct({
-  inventory: Schema.Array(
-    Schema.Struct({ productId: Schema.NonEmptyString, quantity: Quantity }),
-  ),
-  cursor: Schema.Natural,
+export const InventoryItem = Schema.Struct({
+  productId: Schema.NonEmptyString,
+  quantity: Quantity,
 });
-export type InventorySnapshot = typeof InventorySnapshot.Type;
+export type InventoryItem = typeof InventoryItem.Type;
 
 export class InventoryError extends Schema.TaggedError<InventoryError>()(
   "InventoryError",
   {
     operation: Schema.Literals([
-      "InventoryView.snapshot",
+      "InventoryView.list",
       "InventoryStream.events",
       "SetInventory.execute",
     ]),
@@ -39,7 +37,7 @@ export const inventoryFailure =
 export class InventoryView extends Context.Service<
   InventoryView,
   {
-    readonly snapshot: Effect.Effect<InventorySnapshot, InventoryError>;
+    readonly list: Effect.Effect<ReadonlyArray<InventoryItem>, InventoryError>;
   }
 >()("@shop/logistics/InventoryView") {}
 
@@ -48,12 +46,12 @@ export const InventoryViewLive = Layer.effect(
   Effect.gen(function* () {
     const inventory = yield* InventoryRepository;
     return {
-      snapshot: Effect.fn("InventoryView.snapshot")(function* () {
-        return yield* inventory.snapshot.pipe(
-          Effect.flatMap(Schema.decodeUnknownEffect(InventorySnapshot)),
-          Effect.mapError(
-            inventoryFailure("InventoryView.snapshot", "storage"),
+      list: Effect.fn("InventoryView.list")(function* () {
+        return yield* inventory.list.pipe(
+          Effect.flatMap(
+            Schema.decodeUnknownEffect(Schema.Array(InventoryItem)),
           ),
+          Effect.mapError(inventoryFailure("InventoryView.list", "storage")),
         );
       })(),
     };

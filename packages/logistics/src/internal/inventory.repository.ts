@@ -13,7 +13,7 @@ export class InventoryRepository extends Context.Service<
   InventoryRepository,
   {
     readonly quantity: (productId: string) => Effect.Effect<unknown>;
-    readonly snapshot: Effect.Effect<unknown>;
+    readonly list: Effect.Effect<unknown>;
     readonly events: Effect.Effect<ReadonlyArray<InventoryEvent>>;
     readonly set: (
       productId: string,
@@ -40,12 +40,7 @@ export const InventoryRepositoryLive = Layer.effect(
             return row === undefined ? 0 : row.quantity;
           }),
         ),
-      snapshot: Ref.get(state).pipe(
-        Effect.map((s) => ({
-          inventory: s.inventory,
-          cursor: s.events.length,
-        })),
-      ),
+      list: Ref.get(state).pipe(Effect.map((s) => s.inventory)),
       events: Ref.get(state).pipe(Effect.map((s) => s.events)),
       set: (productId: string, quantity: number) =>
         Ref.modify(state, (s): readonly [InventoryEvent, State] => {
