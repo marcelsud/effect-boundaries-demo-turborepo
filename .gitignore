@@ -1,5 +1,5 @@
 node_modules/
 dist/
 *.tsbuildinfo
-_boundary.invalid.ts
-_lint-fixtures/
+.nx/
+.turbo/

@@ -1,0 +1,99 @@
+$ bunx tsc -p packages/catalog --noEmit
+
+PASS TypeScript alone accepts the internally supplied private provider
+
+$ git diff --cached -- packages/catalog/src/internal/Module.ts
+
+diff --git a/packages/catalog/src/internal/Module.ts b/packages/catalog/src/internal/Module.ts
+index ace8b88..6411261 100644
+--- a/packages/catalog/src/internal/Module.ts
++++ b/packages/catalog/src/internal/Module.ts
+@@ -1,35 +1,21 @@
+ import { Effect, Layer } from "effect"
+ import { Catalog, ProductUnavailable } from "../Catalog.js"
+-import { Logistics } from "@shop/logistics"
+-import { Pricing } from "@shop/pricing"
+ import {
+-  ProductRepository, ProductRepositoryLive
+-} from "./ProductRepository.js"
++  PriceRepository, PriceRepositoryLive
++} from "../../../pricing/dist/internal/PriceRepository.js"
+
+-// The third type argument is Catalog's allowed external provider requirement.
+-export const CatalogModule: Layer.Layer<Catalog, never, Logistics | Pricing> = Layer.effect(
++export const CatalogModule: Layer.Layer<Catalog> = Layer.effect(
+   Catalog,
+   Effect.gen(function* () {
+-    const products = yield* ProductRepository
+-    const logistics = yield* Logistics
+-    const pricing = yield* Pricing
+-
++    const prices = yield* PriceRepository
+     return {
+-      getProduct: (productId) => Effect.gen(function* () {
+-        const product = yield* products.find(productId)
+-        if (!product) {
+-          return yield* Effect.fail(new ProductUnavailable({
+-            productId, message: "Product not found"
+-          }))
+-        }
+-        const availableQuantity = yield* logistics.getAvailability(productId)
+-        const price = yield* pricing.getPrice(productId).pipe(
+-          Effect.mapError((error) => new ProductUnavailable({
+-            productId, message: error.message
+-          }))
+-        )
+-        return { ...product, availableQuantity, price }
++      getProduct: (productId: string) => Effect.gen(function* () {
++        const price = yield* prices.find(productId)
++        if (!price) return yield* Effect.fail(new ProductUnavailable({
++          productId, message: "Price not found"
++        }))
++        return { id: productId, name: "Keyboard", availableQuantity: 12, price }
+       })
+     }
+   })
+-).pipe(Layer.provide(ProductRepositoryLive))
++).pipe(Layer.provide(PriceRepositoryLive))
+
+$ git commit -m "Read Pricing internals from Catalog"
+
+$ turbo run build demo
+
+   • turbo 2.11.10
+   • Packages in scope: @shop/architecture, @shop/catalog, @shop/demo, @shop/logistics, @shop/pricing
+   • Running build, demo in 5 packages
+   • Remote caching disabled
+
+//:boundaries: cache bypass, force executing 3c00ffc405c89006
+//:boundaries: $ turbo boundaries
+//:boundaries: • turbo 2.11.10
+//:boundaries: Checking packages...
+//:boundaries: Checked 14 files in 5 packages, 1 issue found
+//:boundaries:   x import `../../../pricing/dist/internal/PriceRepository.js` leaves the
+//:boundaries:   | package
+//:boundaries:    ,-[packages/catalog/src/internal/Module.ts:5:8]
+//:boundaries:  4 |   PriceRepository, PriceRepositoryLive
+//:boundaries:  5 | } from "../../../pricing/dist/internal/PriceRepository.js"
+//:boundaries:    :        ^^^^^^^^^^^^^^^^^^^^^^^^^|^^^^^^^^^^^^^^^^^^^^^^^^^
+//:boundaries:    :                                 `-- file imported here
+//:boundaries:  6 |
+//:boundaries:    `----
+//:boundaries:   help: `../../../pricing/dist/internal/PriceRepository.js` resolves to path
+//:boundaries:         `../pricing/dist/internal/PriceRepository.js` which is outside of
+//:boundaries:         `@shop/catalog`
+//:boundaries:
+//:boundaries: error: script "boundaries" exited with code 1
+//#boundaries:  ERROR  command () bun run boundaries exited (1)
+
+ Tasks:    0 successful, 1 total
+Cached:    0 cached, 1 total
+  Time:    505ms
+Failed:    //#boundaries
+
+ ERROR  run failed: command  exited (1)
+error: script "check" exited with code 1
+
+PASS native turborepo check rejects the commit (exit 1); HEAD unchanged
+
+Catalog source restored; disposable Git metadata removed

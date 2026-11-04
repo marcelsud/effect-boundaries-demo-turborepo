@@ -1,0 +1,16 @@
+{
+  "name": "@shop/demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "demo": "node dist/main.js"
+  },
+  "dependencies": {
+    "@shop/catalog": "*",
+    "@shop/logistics": "*",
+    "@shop/pricing": "*",
+    "effect": "4.1.2"
+  }
+}

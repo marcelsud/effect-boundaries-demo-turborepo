@@ -1,0 +1,47 @@
+--- a/packages/logistics/package.json
++++ b/packages/logistics/package.json
+@@ -10,7 +10,8 @@
+     }
+   },
+   "dependencies": {
+-    "effect": "4.1.2"
++    "effect": "4.1.2",
++    "@shop/pricing": "*"
+   },
+   "scripts": {
+     "build": "tsc -p tsconfig.json"
+--- a/packages/logistics/tsconfig.json
++++ b/packages/logistics/tsconfig.json
+@@ -6,5 +6,10 @@
+   },
+   "include": [
+     "src/**/*.ts"
++  ],
++  "references": [
++    {
++      "path": "../pricing"
++    }
+   ]
+ }
+--- a/packages/logistics/src/internal/Module.ts
++++ b/packages/logistics/src/internal/Module.ts
+@@ -1,5 +1,6 @@
+ import { Effect, Layer } from "effect"
+ import { Logistics } from "../Logistics.js"
++import { Pricing, PricingLive } from "@shop/pricing"
+ import {
+   InventoryRepository, InventoryRepositoryLive
+ } from "./InventoryRepository.js"
+@@ -8,9 +9,11 @@
+   Logistics,
+   Effect.gen(function* () {
+     const inventory = yield* InventoryRepository
++    yield* Pricing
+     return { getAvailability: inventory.quantity }
+   })
+ ).pipe(
+   // Consume the private provider; expose only Logistics.
+-  Layer.provide(InventoryRepositoryLive)
++  Layer.provide(InventoryRepositoryLive),
++  Layer.provide(PricingLive)
+ )

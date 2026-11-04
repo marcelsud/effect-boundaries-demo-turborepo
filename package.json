@@ -1,28 +1,27 @@
 {
-  "name": "effect-boundaries-demo",
+  "name": "effect-boundaries-demo-turborepo",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*",
+    "architecture",
+    "apps/*"
+  ],
   "engines": {
     "node": ">=24"
   },
   "scripts": {
-    "lint:imports": "node scripts/lint-imports.mjs",
-    "lint:boundaries": "node scripts/check-project-graph.mjs && bun run lint:imports",
-    "build": "bun run lint:boundaries && tsc -b",
-    "demo": "bun run build && node scripts/demo.mjs",
-    "check:boundaries": "bun run build && node scripts/check-boundaries.mjs",
-    "test:lint": "node scripts/test-linter.mjs",
-    "check": "bun run check:boundaries && bun run test:lint && node scripts/demo.mjs",
-    "setup:hooks": "git config core.hooksPath .githooks",
-    "simulate:violation": "bun run build && node scripts/simulate-violation.mjs"
+    "boundaries": "turbo boundaries",
+    "build": "turbo run build",
+    "check": "turbo run build demo",
+    "demo": "turbo run demo --filter=@shop/demo",
+    "graph": "turbo run build --graph",
+    "setup:hooks": "git config core.hooksPath .githooks"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "eslint": "10.14.0",
-    "eslint-import-resolver-typescript": "4.4.5",
-    "eslint-plugin-boundaries": "7.4.1",
-    "oxlint": "1.91.0",
-    "typescript": "7.0.2"
-  }
+    "typescript": "6.0.3",
+    "turbo": "2.11.10"
+  },
+  "packageManager": "bun@1.4.4"
 }

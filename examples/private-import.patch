@@ -1,14 +1,3 @@
-$ bun run build && node scripts/simulate-violation.mjs
-$ bun run lint:boundaries && tsc -b
-$ node scripts/check-project-graph.mjs && bun run lint:imports
-PASS workspace manifests and project references
-$ node scripts/lint-imports.mjs
-$ tsc -p packages/catalog --noEmit
-PASS TypeScript alone: exported Layer requires no private provider
-
-$ git diff --cached -- packages/catalog/src/internal/Module.ts
-diff --git a/packages/catalog/src/internal/Module.ts b/packages/catalog/src/internal/Module.ts
-index ace8b88..6411261 100755
 --- a/packages/catalog/src/internal/Module.ts
 +++ b/packages/catalog/src/internal/Module.ts
 @@ -1,35 +1,21 @@
@@ -21,7 +10,7 @@ index ace8b88..6411261 100755
 -} from "./ProductRepository.js"
 +  PriceRepository, PriceRepositoryLive
 +} from "../../../pricing/dist/internal/PriceRepository.js"
-
+ 
 -// The third type argument is Catalog's allowed external provider requirement.
 -export const CatalogModule: Layer.Layer<Catalog, never, Logistics | Pricing> = Layer.effect(
 +export const CatalogModule: Layer.Layer<Catalog> = Layer.effect(
@@ -58,20 +47,3 @@ index ace8b88..6411261 100755
    })
 -).pipe(Layer.provide(ProductRepositoryLive))
 +).pipe(Layer.provide(PriceRepositoryLive))
-
-$ git commit -m "Read pricing internals from Catalog"
-$ bun run check:boundaries && bun run test:lint && node scripts/demo.mjs
-$ bun run build && node scripts/check-boundaries.mjs
-$ bun run lint:boundaries && tsc -b
-$ node scripts/check-project-graph.mjs && bun run lint:imports
-PASS workspace manifests and project references
-$ node scripts/lint-imports.mjs
-packages/catalog/src/internal/Module.ts:5:8: error boundaries(dependencies): There is no policy allowing dependencies from elements of type "packages/catalog" to elements of type "packages/pricing"
-error: script "lint:imports" exited with code 1
-error: script "lint:boundaries" exited with code 1
-error: script "build" exited with code 1
-error: script "check:boundaries" exited with code 1
-error: script "check" exited with code 1
-
-PASS commit rejected (exit 1); HEAD unchanged
-Catalog Module.ts restored; disposable Git metadata removed

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "globalDependencies": [
+    "tsconfig.base.json"
+  ],
+  "tasks": {
+    "//#boundaries": {
+      "cache": false
+    },
+    "build": {
+      "dependsOn": [
+        "//#boundaries",
+        "^build"
+      ],
+      "outputs": [
+        "dist/**",
+        "tsconfig.tsbuildinfo"
+      ]
+    },
+    "demo": {
+      "dependsOn": [
+        "build"
+      ],
+      "cache": false
+    }
+  },
+  "boundaries": {
+    "tags": {
+      "scope:catalog": {
+        "dependencies": {
+          "allow": [
+            "scope:logistics",
+            "scope:pricing"
+          ]
+        }
+      },
+      "scope:logistics": {
+        "dependencies": {
+          "allow": [
+            "scope:logistics"
+          ]
+        }
+      },
+      "scope:pricing": {
+        "dependencies": {
+          "allow": [
+            "scope:pricing"
+          ]
+        }
+      },
+      "scope:architecture": {
+        "dependencies": {
+          "allow": [
+            "scope:catalog",
+            "scope:logistics",
+            "scope:pricing"
+          ]
+        }
+      },
+      "scope:app": {
+        "dependencies": {
+          "allow": [
+            "scope:catalog",
+            "scope:logistics",
+            "scope:pricing"
+          ]
+        }
+      }
+    }
+  }
+}
