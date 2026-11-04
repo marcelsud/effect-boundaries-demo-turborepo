@@ -58,21 +58,21 @@ TypeScript resolves the public source barrel; Node resolves `dist/index.js`.
 There are no separate API packages or RPC definitions.
 
 ```ts
-import { Effect, Layer } from "effect"
-import { Catalog, CatalogLive } from "@shop/catalog"
-import { LogisticsLive } from "@shop/logistics"
-import { PricingLive } from "@shop/pricing"
+import { Effect, Layer } from "effect";
+import { Catalog, CatalogLive } from "@shop/catalog";
+import { LogisticsLive } from "@shop/logistics";
+import { PricingLive } from "@shop/pricing";
 
 const CommerceLive = CatalogLive.pipe(
-  Layer.provide(Layer.mergeAll(LogisticsLive, PricingLive))
-)
+  Layer.provide(Layer.mergeAll(LogisticsLive, PricingLive)),
+);
 
 const product = await Effect.runPromise(
   Effect.gen(function* () {
-    const catalog = yield* Catalog
-    return yield* catalog.getProduct("p-1")
-  }).pipe(Effect.provide(CommerceLive))
-)
+    const catalog = yield* Catalog;
+    return yield* catalog.getProduct({ productId: "p-1" });
+  }).pipe(Effect.provide(CommerceLive)),
+);
 ```
 
 Each team controls its service interface, exported DTOs/errors, and public Layer.
@@ -80,6 +80,41 @@ The application composes these Layers. TypeScript checks that the actual
 application wiring supplies every required Effect service. A missing provider
 fails the application build; there is no separate whitelist of permitted Layer
 input types.
+
+## Schemas and Live layers
+
+Each service's schemas, Context service, and Live layer are in the same file:
+
+```text
+packages/catalog/src/Catalog.ts       GetProductRequest, Product, ProductUnavailable, Catalog, CatalogLive
+packages/logistics/src/Logistics.ts   GetAvailabilityRequest, Quantity, Logistics, LogisticsLive
+packages/pricing/src/Pricing.ts       GetPriceRequest, Price, PriceUnavailable, Pricing, PricingLive
+```
+
+Repositories stay private in `src/internal`. There are no `Module.ts` files.
+They return raw `unknown` storage values; each Live layer decodes those values
+before using them as domain data.
+
+- Requests use `Schema.Struct` and non-empty product IDs.
+- Price amounts and inventory quantities use `Schema.Natural`; the demo's
+  supported currency is `BRL`.
+- Catalog's Product schema composes Pricing's public Price schema and Logistics'
+  public Quantity schema.
+- DTO types are derived from schemas. Domain errors use `Schema.TaggedError`
+  (Effect 4.1.2); decode failures stay in the `Schema.SchemaError` failure channel.
+- The application decodes a JSON request and encodes/decodes products and domain
+  errors using the same public schemas. No transport or RPC is introduced.
+
+The runtime assertions cover invalid requests, invalid amounts/currency and
+quantities, missing products/prices, JSON round trips, and a provider returning
+an invalid numeric refinement. Catalog preserves dependency validation failures
+and maps Pricing domain failures into its own public error schema. The final
+Catalog response is validated too.
+
+Run `bun run format` to apply Prettier, or `bun run format:check` to verify it.
+Generated outputs, Bun's lockfile, patch files, and captured terminal output are
+excluded from formatting. Example patch contents use the same formatter as the
+source files.
 
 ## Team-owned API changes
 
@@ -133,12 +168,12 @@ with `bun run setup:hooks`. Apply the included patch:
 ```sh
 git apply examples/private-import.patch
 bunx tsc -p packages/catalog --noEmit --tsBuildInfoFile packages/catalog/type-probe.tsbuildinfo
-git add packages/catalog/src/internal/Module.ts
+git add packages/catalog/src/Catalog.ts
 git commit -m "Read Pricing internals from Catalog"
 ```
 
 The patch changes Catalog to import and internally provide
-`../../../pricing/dist/internal/PriceRepository.js`. TypeScript alone accepts
+`../../pricing/dist/internal/PriceRepository.js`. TypeScript alone accepts
 the Layer because its private provider is already satisfied. The native boundary
 check rejects the import, so the hook rejects the commit. HEAD stays unchanged.
 See [the captured commit output](examples/rejected-commit.txt).
@@ -146,7 +181,7 @@ See [the captured commit output](examples/rejected-commit.txt).
 Restore only the demonstration change:
 
 ```sh
-git restore --staged --worktree -- packages/catalog/src/internal/Module.ts
+git restore --staged --worktree -- packages/catalog/src/Catalog.ts
 ```
 
 A second patch, `examples/public-dependency.patch`, makes Logistics consume
@@ -158,7 +193,7 @@ demo pass without changing any shared tool configuration.
 git apply examples/public-dependency.patch
 bun install
 bun run check
-git restore --worktree -- bun.lock packages/logistics/package.json packages/logistics/tsconfig.json packages/logistics/src/internal/Module.ts
+git restore --worktree -- bun.lock packages/logistics/package.json packages/logistics/tsconfig.json packages/logistics/src/Logistics.ts
 ```
 
 Apply the patches separately. The restore commands discard the listed files'

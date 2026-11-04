@@ -15,12 +15,15 @@
     "check": "turbo run build demo",
     "demo": "turbo run demo --filter=@shop/demo",
     "graph": "turbo run build --graph",
-    "setup:hooks": "git config core.hooksPath .githooks"
+    "setup:hooks": "git config core.hooksPath .githooks",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "typescript": "6.0.3",
-    "turbo": "2.11.10"
+    "prettier": "3.9.10",
+    "turbo": "2.11.10",
+    "typescript": "6.0.3"
   },
   "packageManager": "bun@1.4.4"
 }

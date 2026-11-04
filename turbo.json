@@ -1,26 +1,16 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
-  "globalDependencies": [
-    "tsconfig.base.json"
-  ],
+  "globalDependencies": ["tsconfig.base.json"],
   "tasks": {
     "//#boundaries": {
       "cache": false
     },
     "build": {
-      "dependsOn": [
-        "//#boundaries",
-        "^build"
-      ],
-      "outputs": [
-        "dist/**",
-        "tsconfig.tsbuildinfo"
-      ]
+      "dependsOn": ["//#boundaries", "^build"],
+      "outputs": ["dist/**", "tsconfig.tsbuildinfo"]
     },
     "demo": {
-      "dependsOn": [
-        "build"
-      ],
+      "dependsOn": ["build"],
       "cache": false
     }
   }

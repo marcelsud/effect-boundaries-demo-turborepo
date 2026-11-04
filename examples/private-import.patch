@@ -1,49 +1,82 @@
---- a/packages/catalog/src/internal/Module.ts
-+++ b/packages/catalog/src/internal/Module.ts
-@@ -1,35 +1,21 @@
- import { Effect, Layer } from "effect"
- import { Catalog, ProductUnavailable } from "../Catalog.js"
--import { Logistics } from "@shop/logistics"
--import { Pricing } from "@shop/pricing"
+--- a/packages/catalog/src/Catalog.ts
++++ b/packages/catalog/src/Catalog.ts
+@@ -1,4 +1,8 @@
+ import { Context, Effect, Layer, Schema } from "effect";
++import {
++  PriceRepository,
++  PriceRepositoryLive,
++} from "../../pricing/dist/internal/PriceRepository.js";
+ import { Logistics, Quantity } from "@shop/logistics";
+ import { Pricing, Price } from "@shop/pricing";
  import {
--  ProductRepository, ProductRepositoryLive
--} from "./ProductRepository.js"
-+  PriceRepository, PriceRepositoryLive
-+} from "../../../pricing/dist/internal/PriceRepository.js"
+@@ -37,45 +41,29 @@
+   }
+ >()("@shop/Catalog") {}
  
--// The third type argument is Catalog's allowed external provider requirement.
--export const CatalogModule: Layer.Layer<Catalog, never, Logistics | Pricing> = Layer.effect(
-+export const CatalogModule: Layer.Layer<Catalog> = Layer.effect(
-   Catalog,
-   Effect.gen(function* () {
--    const products = yield* ProductRepository
--    const logistics = yield* Logistics
--    const pricing = yield* Pricing
--
-+    const prices = yield* PriceRepository
-     return {
--      getProduct: (productId) => Effect.gen(function* () {
--        const product = yield* products.find(productId)
--        if (!product) {
--          return yield* Effect.fail(new ProductUnavailable({
--            productId, message: "Product not found"
--          }))
--        }
--        const availableQuantity = yield* logistics.getAvailability(productId)
--        const price = yield* pricing.getPrice(productId).pipe(
--          Effect.mapError((error) => new ProductUnavailable({
--            productId, message: error.message
--          }))
--        )
--        return { ...product, availableQuantity, price }
-+      getProduct: (productId: string) => Effect.gen(function* () {
-+        const price = yield* prices.find(productId)
-+        if (!price) return yield* Effect.fail(new ProductUnavailable({
-+          productId, message: "Price not found"
-+        }))
-+        return { id: productId, name: "Keyboard", availableQuantity: 12, price }
-       })
-     }
-   })
--).pipe(Layer.provide(ProductRepositoryLive))
-+).pipe(Layer.provide(PriceRepositoryLive))
+-// The owning team controls the public Layer and its provider requirements.
+-export const CatalogLive: Layer.Layer<Catalog, never, Logistics | Pricing> =
+-  Layer.effect(
+-    Catalog,
+-    Effect.gen(function* () {
+-      const products = yield* ProductRepository;
+-      const logistics = yield* Logistics;
+-      const pricing = yield* Pricing;
+-      return {
+-        getProduct: (request) =>
+-          Effect.gen(function* () {
+-            const input =
+-              yield* Schema.decodeUnknownEffect(GetProductRequest)(request);
+-            const row = yield* products.find(input.productId);
+-            if (row === undefined) {
+-              return yield* new ProductUnavailable({
+-                productId: input.productId,
+-                message: "Product not found",
+-              });
+-            }
+-            const product =
+-              yield* Schema.decodeUnknownEffect(ProductRecord)(row);
+-            const availableQuantity = yield* logistics.getAvailability(input);
+-            const price = yield* pricing.getPrice(input).pipe(
+-              Effect.mapError((error) =>
+-                error._tag === "PriceUnavailable"
+-                  ? new ProductUnavailable({
+-                      productId: input.productId,
+-                      message: error.message,
+-                    })
+-                  : error,
+-              ),
+-            );
+-            return yield* Schema.decodeUnknownEffect(Product)({
+-              ...product,
+-              availableQuantity,
+-              price,
++export const CatalogLive: Layer.Layer<Catalog> = Layer.effect(
++  Catalog,
++  Effect.gen(function* () {
++    const prices = yield* PriceRepository;
++    return {
++      getProduct: (request) =>
++        Effect.gen(function* () {
++          const { productId } =
++            yield* Schema.decodeUnknownEffect(GetProductRequest)(request);
++          const price = yield* prices.find(productId);
++          if (price === undefined) {
++            return yield* new ProductUnavailable({
++              productId,
++              message: "Price not found",
+             });
+-          }),
+-      };
+-    }),
+-  ).pipe(Layer.provide(ProductRepositoryLive));
++          }
++          return yield* Schema.decodeUnknownEffect(Product)({
++            id: productId,
++            name: "Keyboard",
++            availableQuantity: 12,
++            price,
++          });
++        }),
++    };
++  }),
++).pipe(Layer.provide(PriceRepositoryLive));

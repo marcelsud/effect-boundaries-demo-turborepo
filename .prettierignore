@@ -1,0 +1,8 @@
+node_modules/
+**/dist/
+**/*.tsbuildinfo
+.nx/
+.turbo/
+bun.lock
+examples/*.patch
+examples/*.txt
